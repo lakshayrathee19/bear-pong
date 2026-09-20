@@ -1,0 +1,1528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Bear Pong - 3D Physics Cup Pong</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #05070a;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            touch-action: none;
+            user-select: none;
+        }
+        #game-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 1;
+        }
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none;
+        }
+        .ui-panel {
+            background: rgba(15, 23, 42, 0.88);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 16px;
+            pointer-events: auto;
+            box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.6);
+        }
+        .btn-action {
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+        }
+        .btn-action:hover {
+            transform: translateY(-2px);
+            filter: brightness(1.2);
+        }
+        .btn-action:active {
+            transform: translateY(1px);
+        }
+        @keyframes pulse-subtle {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.8; transform: scale(0.97); }
+        }
+        .anim-pulse {
+            animation: pulse-subtle 1.8s infinite ease-in-out;
+        }
+        .modal-backdrop {
+            background: rgba(3, 5, 10, 0.85);
+            backdrop-filter: blur(10px);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Main Menu Overlay -->
+    <div id="main-menu" class="fixed inset-0 z-50 bg-slate-950 flex flex-col items-center justify-center">
+        <h1 class="text-5xl md:text-7xl font-black text-amber-500 mb-2 tracking-tight drop-shadow-md">BEAR PONG</h1>
+        <p class="text-amber-200/60 font-medium mb-10 tracking-widest uppercase text-sm">3D Physics Cup Pong</p>
+        <button onclick="startGame()" class="ui-panel px-12 py-4 text-2xl font-bold text-white bg-amber-600 hover:bg-amber-500 rounded-2xl btn-action shadow-lg shadow-amber-600/30">PLAY GAME</button>
+    </div>
+
+    <div id="ui-layer" class="flex flex-col justify-between p-4 md:p-6 select-none">
+        
+        <!-- Header / Scoreboard Bar -->
+        <div class="flex justify-between items-stretch w-full max-w-5xl mx-auto gap-3">
+            
+            <!-- Player Score Panel -->
+            <div class="ui-panel px-4 py-3 flex-1 max-w-[210px] flex flex-col justify-center border-l-4 border-l-amber-500">
+                <div class="flex justify-between items-center mb-1">
+                    <span class="text-xs text-amber-400 font-bold tracking-wider flex items-center gap-1.5">
+                        <i class="fa-solid fa-paw text-amber-500"></i> YOU
+                    </span>
+                    <span id="player-shots-badge" class="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full font-mono font-bold">SHOT 1/2</span>
+                </div>
+                <div class="text-2xl md:text-3xl font-black text-white" id="player-score">10 CUPS</div>
+                <div id="player-cup-icons" class="flex gap-1 mt-1 text-red-500 text-xs flex-wrap"></div>
+            </div>
+            
+            <!-- Turn & Game Status Panel -->
+            <div class="ui-panel px-6 py-3 text-white text-center flex flex-col justify-center min-w-[180px] md:min-w-[260px]">
+                <div id="turn-indicator" class="text-lg md:text-xl font-black text-amber-400 anim-pulse tracking-wide uppercase">YOUR TURN</div>
+                <div id="game-status" class="text-xs text-gray-300 font-medium mt-0.5 uppercase tracking-widest">Drag Ball Back to Aim</div>
+            </div>
+
+            <!-- AI Score Panel -->
+            <div class="ui-panel px-4 py-3 flex-1 max-w-[210px] flex flex-col justify-center border-r-4 border-r-red-500 text-right">
+                <div class="flex justify-between items-center mb-1 flex-row-reverse">
+                    <span class="text-xs text-red-400 font-bold tracking-wider flex items-center gap-1.5">
+                        BOT <i class="fa-solid fa-robot text-red-500"></i>
+                    </span>
+                    <span id="ai-shots-badge" class="text-[10px] bg-red-500/20 text-red-300 px-2 py-0.5 rounded-full font-mono font-bold opacity-40">SHOT 1/2</span>
+                </div>
+                <div class="text-2xl md:text-3xl font-black text-white" id="ai-score">10 CUPS</div>
+                <div id="ai-cup-icons" class="flex gap-1 mt-1 text-red-500 text-xs flex-wrap justify-end"></div>
+            </div>
+        </div>
+
+        <!-- Center Notification Popups -->
+        <div class="fixed inset-0 flex flex-col items-center justify-center pointer-events-none z-20 px-4">
+            <h1 id="center-message" class="text-5xl md:text-7xl font-black text-white drop-shadow-[0_10px_25px_rgba(0,0,0,0.9)] opacity-0 transition-all duration-300 transform scale-75 tracking-tight text-center">DUNK!</h1>
+            <p id="sub-message" class="text-lg md:text-2xl font-bold text-amber-400 drop-shadow-md opacity-0 transition-all duration-300 mt-2 uppercase tracking-widest text-center"></p>
+        </div>
+
+        <!-- Power Visualizer (Active during Drag) -->
+        <div id="drag-indicator-container" class="absolute bottom-24 left-1/2 transform -translate-x-1/2 w-full max-w-[260px] opacity-0 transition-opacity duration-200 pointer-events-none z-20">
+            <div class="bg-slate-900/90 backdrop-blur-md p-3 rounded-2xl border border-amber-500/30 text-center shadow-2xl">
+                <div class="text-[10px] font-bold text-amber-400 uppercase tracking-widest mb-1.5 flex justify-between items-center px-1">
+                    <span>THROW POWER</span>
+                    <span id="power-pct-text" class="font-mono text-white">0%</span>
+                </div>
+                <div class="w-full bg-slate-950 h-3 rounded-full overflow-hidden p-0.5 border border-white/10 shadow-inner">
+                    <div id="power-bar" class="h-full bg-gradient-to-r from-emerald-500 via-amber-400 to-red-500 rounded-full w-0 transition-all duration-75"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Utility Bar -->
+        <div class="flex justify-between items-end w-full max-w-5xl mx-auto gap-3">
+            <!-- Left Controls -->
+            <div class="flex gap-2">
+                <button id="btn-rerack" onclick="handleReRack()" class="ui-panel btn-action px-4 py-2.5 text-white text-xs font-bold flex items-center gap-2 bg-slate-800/90 hover:bg-slate-700">
+                    <i class="fa-solid fa-shapes text-amber-400"></i>
+                    <span>RE-RACK <span id="rerack-count" class="text-amber-400">(2)</span></span>
+                </button>
+            </div>
+
+            <!-- Hint text -->
+            <div class="hidden sm:block text-center text-amber-200/60 text-xs tracking-wide pb-2 font-medium">
+                <i class="fa-solid fa-hand-pointer mr-1"></i> Drag ball backward & release to launch.
+            </div>
+
+            <!-- Right Utility Buttons -->
+            <div class="flex gap-2">
+                <button onclick="toggleStatsModal()" class="ui-panel btn-action w-10 h-10 flex items-center justify-center text-white bg-slate-800/90 hover:bg-slate-700">
+                    <i class="fa-solid fa-chart-column text-amber-400"></i>
+                </button>
+                <button onclick="toggleSettingsModal()" class="ui-panel btn-action w-10 h-10 flex items-center justify-center text-white bg-slate-800/90 hover:bg-slate-700">
+                    <i class="fa-solid fa-gear text-amber-400"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals Container -->
+    <div id="modal-container" class="fixed inset-0 z-30 modal-backdrop hidden flex items-center justify-center p-4">
+        
+        <!-- Settings Modal -->
+        <div id="settings-modal" class="ui-panel p-6 w-full max-w-md text-white hidden">
+            <div class="flex justify-between items-center mb-5 border-b border-gray-700 pb-3">
+                <h3 class="text-lg font-bold flex items-center gap-2"><i class="fa-solid fa-gear text-amber-400"></i> GAME SETTINGS</h3>
+                <button onclick="closeModals()" class="text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">AI Opponent Skill</label>
+                    <div class="grid grid-cols-4 gap-2">
+                        <button onclick="setDifficulty('easy')" id="diff-easy" class="diff-btn px-2 py-2 rounded-lg text-xs font-bold border border-gray-700 bg-slate-800">EASY</button>
+                        <button onclick="setDifficulty('medium')" id="diff-medium" class="diff-btn px-2 py-2 rounded-lg text-xs font-bold border border-amber-500 bg-amber-500/20 text-amber-400">MED</button>
+                        <button onclick="setDifficulty('hard')" id="diff-hard" class="diff-btn px-2 py-2 rounded-lg text-xs font-bold border border-gray-700 bg-slate-800">HARD</button>
+                        <button onclick="setDifficulty('expert')" id="diff-expert" class="diff-btn px-2 py-2 rounded-lg text-xs font-bold border border-gray-700 bg-slate-800">PRO</button>
+                    </div>
+                </div>
+
+                <div class="flex justify-between items-center py-2 border-t border-gray-800">
+                    <span class="text-sm font-semibold">Bounce Shot = 2 Cups</span>
+                    <input type="checkbox" id="toggle-bounce" checked onchange="settings.bounceTwoCups = this.checked" class="w-5 h-5 accent-amber-400 cursor-pointer">
+                </div>
+
+                <div class="flex justify-between items-center py-2 border-t border-gray-800">
+                    <span class="text-sm font-semibold">Audio SFX</span>
+                    <input type="checkbox" id="toggle-audio" checked onchange="settings.audioEnabled = this.checked" class="w-5 h-5 accent-amber-400 cursor-pointer">
+                </div>
+
+                <div class="flex justify-between items-center py-2 border-t border-gray-800">
+                    <span class="text-sm font-semibold">Haptic Feedback</span>
+                    <input type="checkbox" id="toggle-haptics" checked onchange="settings.hapticsEnabled = this.checked" class="w-5 h-5 accent-amber-400 cursor-pointer">
+                </div>
+            </div>
+
+            <button onclick="closeModals()" class="w-full mt-6 py-3 bg-amber-600 hover:bg-amber-500 font-bold text-white rounded-xl btn-action shadow-lg shadow-amber-600/30">SAVE & PLAY</button>
+            <button onclick="exitToMainMenu()" class="w-full mt-3 py-3 bg-red-600/80 hover:bg-red-500 font-bold text-white rounded-xl btn-action shadow-lg">EXIT TO MAIN MENU</button>
+        </div>
+
+        <!-- Statistics Modal -->
+        <div id="stats-modal" class="ui-panel p-6 w-full max-w-md text-white hidden">
+            <div class="flex justify-between items-center mb-5 border-b border-gray-700 pb-3">
+                <h3 class="text-lg font-bold flex items-center gap-2"><i class="fa-solid fa-chart-column text-amber-400"></i> BEAR PONG STATS</h3>
+                <button onclick="closeModals()" class="text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-3 mb-4">
+                <div class="bg-slate-900/80 p-3 rounded-xl border border-gray-800 text-center">
+                    <div class="text-xs text-gray-400">GAMES PLAYED</div>
+                    <div id="stat-games" class="text-2xl font-black text-white mt-1">0</div>
+                </div>
+                <div class="bg-slate-900/80 p-3 rounded-xl border border-gray-800 text-center">
+                    <div class="text-xs text-gray-400">VICTORIES</div>
+                    <div id="stat-wins" class="text-2xl font-black text-emerald-400 mt-1">0</div>
+                </div>
+                <div class="bg-slate-900/80 p-3 rounded-xl border border-gray-800 text-center">
+                    <div class="text-xs text-gray-400">ACCURACY</div>
+                    <div id="stat-accuracy" class="text-2xl font-black text-amber-400 mt-1">0%</div>
+                </div>
+                <div class="bg-slate-900/80 p-3 rounded-xl border border-gray-800 text-center">
+                    <div class="text-xs text-gray-400">BOUNCE HITS</div>
+                    <div id="stat-bounces" class="text-2xl font-black text-purple-400 mt-1">0</div>
+                </div>
+            </div>
+
+            <button onclick="closeModals()" class="w-full mt-2 py-3 bg-slate-700 hover:bg-slate-600 font-bold rounded-xl btn-action">CLOSE</button>
+        </div>
+    </div>
+
+    <!-- 3D Canvas Viewport -->
+    <div id="game-container"></div>
+
+    <script>
+        
+        // Game Settings State
+        const settings = {
+            difficulty: 'medium',
+            bounceTwoCups: true,
+            audioEnabled: true,
+            hapticsEnabled: true
+        };
+
+        // Stats tracking
+        const stats = {
+            gamesPlayed: 0,
+            wins: 0,
+            shots: 0,
+            hits: 0,
+            bounceHits: 0
+        };
+
+        // State Machine
+        let gameState = 'GAME_OVER'; // PLAYER_AIMING, IN_FLIGHT, IMPACT_HOLD, RESOLVING, TRANSITION, AI_TURN, GAME_OVER, CHOOSING_CUP
+        let turnOwner = 'PLAYER'; // PLAYER, AI
+        let shotsInTurn = 0; // 0 or 1
+        let hitsInCurrentTurn = 0; // For "Balls Back"
+        let playerScore = 10;
+        let aiScore = 10;
+        let playerReRacks = 2;
+        let inputLocked = true;
+        let stuckFrames = 0;
+
+        // Interaction state
+        let isDragging = false;
+        let dragStart = { x: 0, y: 0 };
+        let currentDrag = { x: 0, y: 0 };
+        let shotBouncedOnTable = false;
+
+        // Throwing Position Coordinates (Front of player throwing line)
+        const PLAYER_THROW_POS = new THREE.Vector3(0, 2.8, 12.2);
+        const AI_THROW_POS = new THREE.Vector3(0, 2.8, -12.2);
+
+        // Home Camera Positions
+        const PLAYER_CAM_HOME = new THREE.Vector3(0, 5.8, 16.8);
+        const PLAYER_CAM_LOOK = new THREE.Vector3(0, 1.0, -2.0);
+
+        const AI_CAM_HOME = new THREE.Vector3(0, 5.8, -16.8);
+        const AI_CAM_LOOK = new THREE.Vector3(0, 1.0, 2.0);
+
+        let currentCamLookAt = new THREE.Vector3().copy(PLAYER_CAM_LOOK);
+
+        // Web Audio Synthesizer
+        let audioCtx = null;
+        function initAudio() {
+            if(!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if(audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        function playSound(type) {
+            if(!settings.audioEnabled) return;
+            initAudio();
+            if(!audioCtx) return;
+
+            const now = audioCtx.currentTime;
+            
+            if(type === 'throw') {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(140, now);
+                osc.frequency.exponentialRampToValueAtTime(380, now + 0.12);
+                gain.gain.setValueAtTime(0.25, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.12);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.12);
+            } 
+            else if(type === 'table') {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(260, now);
+                osc.frequency.exponentialRampToValueAtTime(90, now + 0.09);
+                gain.gain.setValueAtTime(0.4, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.09);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.09);
+            } 
+            else if(type === 'rim') {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(750, now);
+                osc.frequency.exponentialRampToValueAtTime(400, now + 0.14);
+                gain.gain.setValueAtTime(0.4, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.14);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.14);
+            } 
+            else if(type === 'cup_hit') {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(340, now);
+                osc.frequency.exponentialRampToValueAtTime(130, now + 0.22);
+                gain.gain.setValueAtTime(0.6, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.22);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.22);
+            }
+            else if(type === 'win') {
+                [523.25, 659.25, 783.99, 1046.50].forEach((freq, idx) => {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(freq, now + idx * 0.1);
+                    gain.gain.setValueAtTime(0.3, now + idx * 0.1);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.1 + 0.35);
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(now + idx * 0.1);
+                    osc.stop(now + idx * 0.1 + 0.35);
+                });
+            }
+        }
+
+        function triggerHaptic(type) {
+            if(!settings.hapticsEnabled || !navigator.vibrate) return;
+            if(type === 'throw') navigator.vibrate(20);
+            else if(type === 'bounce') navigator.vibrate(30);
+            else if(type === 'hit') navigator.vibrate([40, 30, 60]);
+            else if(type === 'win') navigator.vibrate([100, 50, 100, 50, 200]);
+        }
+
+
+        let scene, camera, renderer, world;
+        let tableBody, ballBody;
+        let ballMesh, trajectoryLine, targetMarkerMesh;
+        let cups = []; 
+        let splashParticles = [];
+
+        // Scale Dimensions
+        const BALL_RADIUS = 0.22;
+        const CUP_RADIUS = 0.48;
+        const CUP_HEIGHT = 1.25;
+        const TABLE_WIDTH = 6.0;
+        const TABLE_LENGTH = 24.0;
+        const TABLE_HEIGHT = 0.6;
+
+        // Custom Wood Texture for Bear Pong Table
+        function createTableTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 1024;
+            canvas.height = 2048;
+            const ctx = canvas.getContext('2d');
+
+            // Rich wood background
+            const grad = ctx.createLinearGradient(0, 0, 0, 2048);
+            grad.addColorStop(0, '#2d1508');
+            grad.addColorStop(0.5, '#4a230d');
+            grad.addColorStop(1, '#2d1508');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, 1024, 2048);
+
+            // Wood grain lines
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.08)';
+            for(let i = 0; i < 250; i++) {
+                ctx.fillRect(Math.random() * 1024, 0, Math.random() * 3 + 1, 2048);
+            }
+
+            // Outer Rail Border
+            ctx.strokeStyle = '#d97706';
+            ctx.lineWidth = 20;
+            ctx.strokeRect(30, 30, 1024 - 60, 2048 - 60);
+
+            // Middle Divider Line
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.lineWidth = 10;
+            ctx.beginPath();
+            ctx.moveTo(30, 1024);
+            ctx.lineTo(1024 - 30, 1024);
+            ctx.stroke();
+
+            // Center Bear Emblem Circle
+            ctx.save();
+            ctx.translate(512, 1024);
+            ctx.beginPath();
+            ctx.arc(0, 0, 220, 0, Math.PI * 2);
+            ctx.fillStyle = '#0f172a';
+            ctx.fill();
+            ctx.lineWidth = 12;
+            ctx.strokeStyle = '#f59e0b';
+            ctx.stroke();
+
+            // Bear Head Silhouette
+            ctx.fillStyle = '#f59e0b';
+            ctx.beginPath();
+            ctx.arc(-100, -100, 50, 0, Math.PI * 2); // Left ear
+            ctx.arc(100, -100, 50, 0, Math.PI * 2);  // Right ear
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.arc(0, 10, 125, 0, Math.PI * 2); // Head
+            ctx.fill();
+
+            // Snout
+            ctx.fillStyle = '#fef3c7';
+            ctx.beginPath();
+            ctx.ellipse(0, 40, 60, 45, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#0f172a';
+            ctx.beginPath();
+            ctx.ellipse(0, 20, 22, 16, 0, 0, Math.PI * 2); // Nose
+            ctx.fill();
+
+            // Text Label
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '900 44px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('BEAR PONG', 0, -150);
+
+            ctx.restore();
+
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.wrapS = THREE.ClampToEdgeWrapping;
+            tex.wrapT = THREE.ClampToEdgeWrapping;
+            return tex;
+        }
+
+        function initThree() {
+            const container = document.getElementById('game-container');
+            
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x06080e);
+            scene.fog = new THREE.FogExp2(0x06080e, 0.016);
+
+            camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 120);
+            camera.position.copy(PLAYER_CAM_HOME);
+            camera.lookAt(PLAYER_CAM_LOOK);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            // Lighting Setup
+            const ambient = new THREE.AmbientLight(0xffffff, 0.55);
+            scene.add(ambient);
+
+            const keySpot = new THREE.SpotLight(0xfff5e6, 1.5);
+            keySpot.position.set(0, 22, 2);
+            keySpot.angle = Math.PI / 3.2;
+            keySpot.penumbra = 0.4;
+            keySpot.castShadow = true;
+            keySpot.shadow.mapSize.width = 2048;
+            keySpot.shadow.mapSize.height = 2048;
+            keySpot.shadow.bias = -0.0001;
+            scene.add(keySpot);
+
+            const fillLight = new THREE.DirectionalLight(0x38bdf8, 0.45);
+            fillLight.position.set(-12, 12, -6);
+            scene.add(fillLight);
+
+            // Dynamic Trajectory Line
+            const maxPoints = 50;
+            const linePositions = new Float32Array(maxPoints * 3);
+            const lineGeom = new THREE.BufferGeometry();
+            lineGeom.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
+
+            const lineMat = new THREE.LineDashedMaterial({
+                color: 0xf59e0b,
+                linewidth: 3,
+                dashSize: 0.3,
+                gapSize: 0.15,
+                opacity: 0.9,
+                transparent: true
+            });
+
+            trajectoryLine = new THREE.Line(lineGeom, lineMat);
+            trajectoryLine.geometry.setDrawRange(0, 0);
+            scene.add(trajectoryLine);
+
+            // Target Landing Ring Marker
+            const markerGeom = new THREE.RingGeometry(0.2, 0.45, 32);
+            const markerMat = new THREE.MeshBasicMaterial({ 
+                color: 0xf59e0b, 
+                side: THREE.DoubleSide, 
+                transparent: true, 
+                opacity: 0.85 
+            });
+            targetMarkerMesh = new THREE.Mesh(markerGeom, markerMat);
+            targetMarkerMesh.rotation.x = -Math.PI / 2;
+            targetMarkerMesh.visible = false;
+            scene.add(targetMarkerMesh);
+        }
+
+
+        function initPhysics() {
+            world = new CANNON.World();
+            world.gravity.set(0, -18, 0); 
+            world.broadphase = new CANNON.SAPBroadphase(world);
+            world.solver.iterations = 12;
+
+            const tablePhysMat = new CANNON.Material("table");
+            const ballPhysMat = new CANNON.Material("ball");
+            const cupPhysMat = new CANNON.Material("cup");
+
+            world.addContactMaterial(new CANNON.ContactMaterial(ballPhysMat, tablePhysMat, {
+                friction: 0.25,
+                restitution: 0.75
+            }));
+
+            world.addContactMaterial(new CANNON.ContactMaterial(ballPhysMat, cupPhysMat, {
+                friction: 0.1,
+                restitution: 0.55
+            }));
+
+            return { tablePhysMat, ballPhysMat, cupPhysMat };
+        }
+
+        function createEnvironment(materials) {
+            const tableGroup = new THREE.Group();
+            
+            // Top Surface Mesh
+            const topGeom = new THREE.BoxGeometry(TABLE_WIDTH, TABLE_HEIGHT, TABLE_LENGTH);
+            const tableTex = createTableTexture();
+            const topMat = new THREE.MeshStandardMaterial({ 
+                map: tableTex,
+                roughness: 0.35, 
+                metalness: 0.1 
+            });
+            const topMesh = new THREE.Mesh(topGeom, topMat);
+            topMesh.receiveShadow = true;
+            topMesh.castShadow = true;
+            tableGroup.add(topMesh);
+
+            // Wooden Table Rails
+            const railGeom = new THREE.BoxGeometry(TABLE_WIDTH + 0.3, TABLE_HEIGHT * 0.6, TABLE_LENGTH + 0.3);
+            const railMat = new THREE.MeshStandardMaterial({ color: 0x271207, roughness: 0.6 });
+            const railMesh = new THREE.Mesh(railGeom, railMat);
+            railMesh.position.y = -TABLE_HEIGHT * 0.2;
+            tableGroup.add(railMesh);
+
+            // Table Legs
+            const legGeom = new THREE.CylinderGeometry(0.25, 0.2, 5.5, 16);
+            const legMat = new THREE.MeshStandardMaterial({ color: 0x1a0f08, roughness: 0.5 });
+            const legPositions = [
+                [-TABLE_WIDTH / 2 + 0.4, -2.75, -TABLE_LENGTH / 2 + 0.6],
+                [TABLE_WIDTH / 2 - 0.4, -2.75, -TABLE_LENGTH / 2 + 0.6],
+                [-TABLE_WIDTH / 2 + 0.4, -2.75, TABLE_LENGTH / 2 - 0.6],
+                [TABLE_WIDTH / 2 - 0.4, -2.75, TABLE_LENGTH / 2 - 0.6]
+            ];
+            legPositions.forEach(pos => {
+                const leg = new THREE.Mesh(legGeom, legMat);
+                leg.position.set(pos[0], pos[1], pos[2]);
+                leg.castShadow = true;
+                tableGroup.add(leg);
+            });
+
+            scene.add(tableGroup);
+
+            // Physics Table Body
+            tableBody = new CANNON.Body({
+                mass: 0,
+                material: materials.tablePhysMat,
+                shape: new CANNON.Box(new CANNON.Vec3(TABLE_WIDTH / 2, TABLE_HEIGHT / 2, TABLE_LENGTH / 2))
+            });
+            world.addBody(tableBody);
+
+            // Floor Surface
+            const floorGeom = new THREE.PlaneGeometry(100, 100);
+            const floorMat = new THREE.MeshStandardMaterial({ color: 0x070913, roughness: 0.95 });
+            const floorMesh = new THREE.Mesh(floorGeom, floorMat);
+            floorMesh.rotation.x = -Math.PI / 2;
+            floorMesh.position.y = -5.5;
+            floorMesh.receiveShadow = true;
+            scene.add(floorMesh);
+
+            const floorBody = new CANNON.Body({ mass: 0, shape: new CANNON.Plane() });
+            floorBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
+            floorBody.position.y = -5.5;
+            world.addBody(floorBody);
+
+            // Ping-Pong Ball Object
+            const ballGeom = new THREE.SphereGeometry(BALL_RADIUS, 32, 32);
+            const ballMatThree = new THREE.MeshPhysicalMaterial({ 
+                color: 0xffffff, 
+                roughness: 0.1, 
+                clearcoat: 1.0,
+                clearcoatRoughness: 0.1 
+            });
+            ballMesh = new THREE.Mesh(ballGeom, ballMatThree);
+            ballMesh.castShadow = true;
+            scene.add(ballMesh);
+
+            ballBody = new CANNON.Body({
+                mass: 0.045,
+                material: materials.ballPhysMat,
+                shape: new CANNON.Sphere(BALL_RADIUS),
+                linearDamping: 0.01,
+                angularDamping: 0.01
+            });
+            
+            ballBody.addEventListener("collide", (e) => {
+                if(gameState !== 'IN_FLIGHT') return;
+                if(e.body === tableBody) {
+                    shotBouncedOnTable = true;
+                    playSound('table');
+                    triggerHaptic('bounce');
+                } else if(e.body.isCupRim) {
+                    playSound('rim');
+                }
+            });
+
+            world.addBody(ballBody);
+        }
+
+
+        function createCupObject(id, x, y, z, isPlayer, materials) {
+            const cupGroup = new THREE.Group();
+            
+            // Outer Red Shell
+            const cupGeom = new THREE.CylinderGeometry(CUP_RADIUS, CUP_RADIUS * 0.72, CUP_HEIGHT, 24, 1, true);
+            const cupMat = new THREE.MeshPhysicalMaterial({ 
+                color: 0xdc2626, 
+                roughness: 0.2, 
+                metalness: 0.05,
+                side: THREE.DoubleSide,
+                clearcoat: 0.6 
+            });
+            const cupMesh = new THREE.Mesh(cupGeom, cupMat);
+            cupMesh.castShadow = true;
+            cupGroup.add(cupMesh);
+
+            // White Inner Rim
+            const rimGeom = new THREE.TorusGeometry(CUP_RADIUS, 0.035, 8, 24);
+            const rimMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
+            const rimMesh = new THREE.Mesh(rimGeom, rimMat);
+            rimMesh.rotation.x = Math.PI / 2;
+            rimMesh.position.y = CUP_HEIGHT / 2;
+            cupGroup.add(rimMesh);
+
+            // Beer Surface
+            const liqGeom = new THREE.CylinderGeometry(CUP_RADIUS * 0.82, CUP_RADIUS * 0.75, CUP_HEIGHT * 0.45, 20);
+            const liqMat = new THREE.MeshStandardMaterial({ color: 0x854d0e, roughness: 0.1 });
+            const liqMesh = new THREE.Mesh(liqGeom, liqMat);
+            liqMesh.position.y = -CUP_HEIGHT * 0.22;
+            cupGroup.add(liqMesh);
+
+            const finalY = y + CUP_HEIGHT / 2 + TABLE_HEIGHT / 2;
+            cupGroup.position.set(x, finalY, z);
+            scene.add(cupGroup);
+
+            // Physics Body - Base Box + Hollow Rim Colliders
+            const cupBody = new CANNON.Body({
+                mass: 0,
+                material: materials.cupPhysMat,
+                position: new CANNON.Vec3(x, finalY, z)
+            });
+
+            // Base Floor
+            const baseShape = new CANNON.Box(new CANNON.Vec3(CUP_RADIUS * 0.6, 0.05, CUP_RADIUS * 0.6));
+            cupBody.addShape(baseShape, new CANNON.Vec3(0, -CUP_HEIGHT / 2, 0));
+
+            // Perimeter Ring Wall Colliders
+            const segments = 12;
+            const wallThickness = 0.025;
+            const wallWidth = (2 * CUP_RADIUS * Math.tan(Math.PI / segments)) / 1.8;
+            
+            for(let i = 0; i < segments; i++) {
+                const angle = (i / segments) * Math.PI * 2;
+                const wallShape = new CANNON.Box(new CANNON.Vec3(wallWidth, CUP_HEIGHT * 0.38, wallThickness));
+                const px = Math.cos(angle) * (CUP_RADIUS - wallThickness);
+                const pz = Math.sin(angle) * (CUP_RADIUS - wallThickness);
+                const q = new CANNON.Quaternion();
+                q.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), -angle);
+                cupBody.addShape(wallShape, new CANNON.Vec3(px, -CUP_HEIGHT * 0.1, pz), q);
+            }
+
+            // Smooth Rounded Rim Colliders (Spheres along top edge to prevent flat wedge trapping)
+            const rimSpheres = 12;
+            const rimRadius = 0.055;
+            const rimCircleRadius = CUP_RADIUS - rimRadius * 0.8;
+            const rimY = CUP_HEIGHT / 2 - rimRadius * 0.5;
+            for(let i = 0; i < rimSpheres; i++) {
+                const angle = (i / rimSpheres) * Math.PI * 2;
+                const rx = Math.cos(angle) * rimCircleRadius;
+                const rz = Math.sin(angle) * rimCircleRadius;
+                cupBody.addShape(new CANNON.Sphere(rimRadius), new CANNON.Vec3(rx, rimY, rz));
+            }
+
+            cupBody.isCupRim = true;
+            world.addBody(cupBody);
+
+            return {
+                id: id,
+                meshGroup: cupGroup,
+                body: cupBody,
+                isPlayer: isPlayer,
+                active: true,
+                x: x,
+                y: finalY,
+                z: z,
+                shakeTime: 0
+            };
+        }
+
+        function setupCups(materials) {
+            cups.forEach(c => {
+                scene.remove(c.meshGroup);
+                world.removeBody(c.body);
+            });
+            cups = [];
+
+            let cupId = 0;
+            const spawnFormation = (isPlayerSide, count) => {
+                // Triangle points inward toward middle of table
+                const zStart = isPlayerSide ? 10.8 : -10.8;
+                const dir = isPlayerSide ? -1 : 1;
+                const spacing = CUP_RADIUS * 2.15;
+
+                let rowCounts = [4, 3, 2, 1];
+                if(count === 6) rowCounts = [3, 2, 1];
+                else if(count === 4) rowCounts = [2, 2];
+                else if(count === 3) rowCounts = [2, 1];
+                else if(count === 2) rowCounts = [1, 1];
+                else if(count === 1) rowCounts = [1];
+
+                rowCounts.forEach((numCups, rowIndex) => {
+                    let startX = -((numCups - 1) * spacing) / 2;
+                    let currentZ = zStart + (rowIndex * spacing * 0.88 * dir);
+                    for(let i = 0; i < numCups; i++) {
+                        let currentX = startX + (i * spacing);
+                        cups.push(createCupObject(cupId++, currentX, 0, currentZ, isPlayerSide, materials));
+                    }
+                });
+            };
+
+            spawnFormation(false, aiScore);  // AI Target Cups (Far side)
+            spawnFormation(true, playerScore); // Player Target Cups (Near side)
+            updateCupIcons();
+        }
+
+
+        function resetBallPosition() {
+            ballBody.mass = 0;
+            ballBody.updateMassProperties();
+
+            // Position ball clearly at the throwing line in front of player/AI
+            if(turnOwner === 'PLAYER') {
+                ballBody.position.copy(PLAYER_THROW_POS);
+            } else {
+                ballBody.position.copy(AI_THROW_POS);
+            }
+            ballBody.velocity.set(0, 0, 0);
+            ballBody.angularVelocity.set(0, 0, 0);
+            shotBouncedOnTable = false;
+            updateVisuals();
+        }
+
+        function initControls() {
+            const raycaster = new THREE.Raycaster();
+            const mouse = new THREE.Vector2();
+
+            const handleStart = (clientX, clientY, target) => {
+                // Ignore clicks on UI elements
+                if(target.closest && (target.closest('.ui-panel') || target.tagName === 'BUTTON' || target.closest('#modal-container'))) {
+                    return;
+                }
+
+                if (gameState === 'CHOOSING_CUP' && turnOwner === 'PLAYER') {
+                    mouse.x = (clientX / window.innerWidth) * 2 - 1;
+                    mouse.y = -(clientY / window.innerHeight) * 2 + 1;
+                    raycaster.setFromCamera(mouse, camera);
+                    
+                    const intersects = raycaster.intersectObjects(scene.children, true);
+                    for(let i=0; i<intersects.length; i++) {
+                        let obj = intersects[i].object;
+                        let clickedCup = cups.find(c => c.active && !c.isPlayer && c.meshGroup.children.includes(obj));
+                        if (clickedCup) {
+                            removeCup(clickedCup);
+                            updateCupIcons();
+                            gameState = 'IMPACT_HOLD';
+                            showNotification("CUP REMOVED", "");
+                            setTimeout(() => evaluateTurnProgress(), 1000);
+                            return;
+                        }
+                    }
+                    return; 
+                }
+
+                if(gameState !== 'PLAYER_AIMING' || inputLocked || turnOwner !== 'PLAYER') return;
+                
+                initAudio();
+                isDragging = true;
+                dragStart.x = clientX;
+                dragStart.y = clientY;
+                currentDrag.x = clientX;
+                currentDrag.y = clientY;
+                document.getElementById('drag-indicator-container').style.opacity = '1';
+                document.getElementById('game-status').innerText = "AIMING & POWERING";
+            };
+
+            const handleMove = (clientX, clientY) => {
+                if(!isDragging || gameState !== 'PLAYER_AIMING' || inputLocked) return;
+                currentDrag.x = clientX;
+                currentDrag.y = clientY;
+
+                let dx = (dragStart.x - currentDrag.x) / window.innerWidth;
+                let dy = (currentDrag.y - dragStart.y) / window.innerHeight; // Dragging backward
+
+                dy = Math.max(0, Math.min(0.5, dy));
+                dx = Math.max(-0.3, Math.min(0.3, dx));
+
+                // Stretch the dunking sweet-spot using cubic easing to broaden the physical successful power range
+                let p = dy / 0.5;
+                let shapedP = 0.5 + 4 * Math.pow(p - 0.5, 3);
+                let mappedDy = shapedP * 0.5;
+
+                let forceZ = -mappedDy * 54; 
+                let forceY = mappedDy * 22 + 8.2;
+                let forceX = dx * 30;
+
+                const powerPct = Math.min(100, Math.max(0, Math.round(p * 100)));
+                document.getElementById('power-bar').style.width = `${powerPct}%`;
+                document.getElementById('power-pct-text').innerText = `${powerPct}%`;
+
+                drawTrajectory(new CANNON.Vec3(forceX, forceY, forceZ));
+            };
+
+            const handleEnd = () => {
+                if(!isDragging || gameState !== 'PLAYER_AIMING' || inputLocked) return;
+                isDragging = false;
+                document.getElementById('drag-indicator-container').style.opacity = '0';
+                
+                trajectoryLine.geometry.setDrawRange(0, 0);
+                targetMarkerMesh.visible = false;
+
+                let dx = (dragStart.x - currentDrag.x) / window.innerWidth;
+                let dy = (currentDrag.y - dragStart.y) / window.innerHeight;
+
+                if(dy > 0.04) {
+                    dy = Math.min(0.5, dy);
+                    dx = Math.max(-0.3, Math.min(0.3, dx));
+
+                    let p = dy / 0.5;
+                    let shapedP = 0.5 + 4 * Math.pow(p - 0.5, 3);
+                    let mappedDy = shapedP * 0.5;
+
+                    let forceZ = -mappedDy * 54;
+                    let forceY = mappedDy * 22 + 8.2;
+                    let forceX = dx * 30;
+
+                    executeThrow(forceX, forceY, forceZ);
+                } else {
+                    document.getElementById('game-status').innerText = "Drag Ball Back to Aim";
+                }
+            };
+
+            window.addEventListener('pointerdown', e => handleStart(e.clientX, e.clientY, e.target));
+            window.addEventListener('pointermove', e => handleMove(e.clientX, e.clientY));
+            window.addEventListener('pointerup', handleEnd);
+        }
+
+        function drawTrajectory(velocity) {
+            const positions = trajectoryLine.geometry.attributes.position.array;
+            let pos = new CANNON.Vec3().copy(ballBody.position);
+            let vel = new CANNON.Vec3().copy(velocity);
+            const dt = 1 / 60;
+            const g = world.gravity.y;
+
+            let pointCount = 0;
+            let landedOnTable = false;
+            let landingPos = new THREE.Vector3();
+
+            for(let i = 0; i < 90; i++) {
+                positions[i * 3] = pos.x;
+                positions[i * 3 + 1] = pos.y;
+                positions[i * 3 + 2] = pos.z;
+                pointCount++;
+
+                pos.x += vel.x * dt;
+                pos.y += vel.y * dt;
+                pos.z += vel.z * dt;
+                vel.y += g * dt;
+
+                if(!landedOnTable && pos.y <= TABLE_HEIGHT / 2 + 0.05) {
+                    landedOnTable = true;
+                    landingPos.set(pos.x, TABLE_HEIGHT / 2 + 0.02, pos.z);
+                }
+
+                if(pos.y < TABLE_HEIGHT / 2 - 0.5) break;
+            }
+
+            trajectoryLine.geometry.attributes.position.needsUpdate = true;
+            trajectoryLine.geometry.setDrawRange(0, pointCount);
+
+            if(landedOnTable) {
+                targetMarkerMesh.position.copy(landingPos);
+                targetMarkerMesh.visible = true;
+            } else {
+                targetMarkerMesh.visible = false;
+            }
+        }
+
+        function executeThrow(vx, vy, vz) {
+            inputLocked = true; // Lock inputs during flight and resolution
+            playSound('throw');
+            triggerHaptic('throw');
+            
+            ballBody.mass = 0.045;
+            ballBody.updateMassProperties();
+            ballBody.wakeUp();
+
+            ballBody.velocity.set(vx, vy, vz);
+            gameState = 'IN_FLIGHT';
+            stats.shots++;
+            
+            document.getElementById('game-status').innerText = "BALL IN FLIGHT";
+            document.getElementById('turn-indicator').classList.remove('anim-pulse');
+        }
+
+
+        function checkCupHits() {
+            for(let i = 0; i < cups.length; i++) {
+                let cup = cups[i];
+                if(!cup.active) continue;
+
+                if(turnOwner === 'PLAYER' && cup.isPlayer) continue;
+                if(turnOwner === 'AI' && !cup.isPlayer) continue;
+
+                const topY = cup.y + CUP_HEIGHT / 2;
+                const bottomY = cup.y - CUP_HEIGHT / 2;
+
+                // MODERATELY FORGIVING Y-THRESHOLD:
+                // Catch the ball just as it breaks the rim plane (topY + 0.12),
+                // before the physics engine violently bounces it out from grazing the inner rim.
+                if(ballBody.position.y <= topY + 0.12 && ballBody.position.y > bottomY + 0.05) {
+                    let dx = ballBody.position.x - cup.x;
+                    let dz = ballBody.position.z - cup.z;
+                    let dist = Math.sqrt(dx * dx + dz * dz);
+
+                    // FORGIVING ENTRY ZONE (OUTCOME 1):
+                    // CUP_RADIUS is 0.48. 68% of that is ~0.326.
+                    // This is larger than the strict physical swish zone, allowing a well-aimed 
+                    // shot to enter comfortably. However, it is strict enough that outer rim hits 
+                    // (dist > 0.35) will correctly fall through to physics and bounce (OUTCOME 2).
+                    if(dist <= CUP_RADIUS * 0.68) {
+                        
+                        // TRAJECTORY CHECK:
+                        // Ball must be travelling downward into the cup.
+                        // We allow a slight upward velocity (< 0.5) to forgive micro-deflections 
+                        // that happened off the inner rim in the exact frame we check.
+                        if(ballBody.velocity.y < 0.5) {
+                            
+                            // Visual Polish: Snap the ball slightly down into the cup 
+                            // so the freeze-frame "IMPACT_HOLD" state looks exactly like 
+                            // the original strict visual (definitively inside the cup) 
+                            // instead of hovering at the new forgiving detection threshold.
+                            ballBody.position.y = topY - 0.05;
+                            ballBody.position.x = cup.x + dx * 0.15; // Pull slightly toward center
+                            ballBody.position.z = cup.z + dz * 0.15;
+                            ballBody.velocity.set(0, 0, 0);
+
+                            return cup;
+                        }
+                    }
+                }
+            }
+            return null;
+        }
+
+        function triggerSplashAnimation(x, y, z) {
+            for(let i = 0; i < 16; i++) {
+                const geom = new THREE.SphereGeometry(0.04 + Math.random() * 0.03, 8, 8);
+                const mat = new THREE.MeshBasicMaterial({ color: 0xfef08a, transparent: true, opacity: 0.9 });
+                const p = new THREE.Mesh(geom, mat);
+                p.position.set(x, y, z);
+                
+                const vel = new THREE.Vector3(
+                    (Math.random() - 0.5) * 4,
+                    Math.random() * 5 + 3,
+                    (Math.random() - 0.5) * 4
+                );
+                
+                scene.add(p);
+                splashParticles.push({ mesh: p, vel: vel, life: 1.0 });
+            }
+        }
+
+        function handleHit(hitCup) {
+            gameState = 'IMPACT_HOLD';
+            hitsInCurrentTurn++;
+            stats.hits++;
+
+            playSound('cup_hit');
+            triggerHaptic('hit');
+            hitCup.shakeTime = 0.6; // Trigger cup shake physical reaction
+            triggerSplashAnimation(hitCup.x, hitCup.y + CUP_HEIGHT / 2, hitCup.z);
+
+            const isBounce = shotBouncedOnTable && settings.bounceTwoCups;
+            if(isBounce) stats.bounceHits++;
+
+            // Hold camera on physical Dunk moment before showing confirmation text
+            setTimeout(() => {
+                showNotification(
+                    isBounce ? "BOUNCE DUNK!" : "DUNK!", 
+                    isBounce ? "BONUS CUP ACTIVE" : "-1 CUP ELIMINATED"
+                );
+
+                setTimeout(() => {
+                    removeCup(hitCup);
+                    updateCupIcons();
+
+                    if(isBounce) {
+                        let opponentCups = cups.filter(c => c.active && c.isPlayer !== hitCup.isPlayer);
+                        if(opponentCups.length > 1 && turnOwner === 'PLAYER') {
+                            gameState = 'CHOOSING_CUP';
+                            document.getElementById('game-status').innerText = "BOUNCE BONUS: CLICK AN OPPONENT CUP TO REMOVE";
+                            document.getElementById('turn-indicator').innerText = "SELECT CUP";
+                        } else if (opponentCups.length > 0 && turnOwner === 'AI') {
+                            removeCup(opponentCups[Math.floor(Math.random() * opponentCups.length)]);
+                            updateCupIcons();
+                            evaluateTurnProgress();
+                        } else if (opponentCups.length === 1) {
+                            removeCup(opponentCups[0]);
+                            updateCupIcons();
+                            evaluateTurnProgress();
+                        } else {
+                            evaluateTurnProgress();
+                        }
+                    } else {
+                        evaluateTurnProgress();
+                    }
+                }, 1000);
+            }, 600);
+        }
+
+        function removeCup(cup) {
+            cup.active = false;
+            scene.remove(cup.meshGroup);
+            world.removeBody(cup.body);
+
+            if(!cup.isPlayer) {
+                aiScore--;
+                document.getElementById('ai-score').innerText = `${aiScore} CUPS`;
+            } else {
+                playerScore--;
+                document.getElementById('player-score').innerText = `${playerScore} CUPS`;
+            }
+        }
+
+        function handleMiss() {
+            gameState = 'IMPACT_HOLD';
+            
+            setTimeout(() => {
+                showNotification("MISS", "");
+                playSound('table');
+                
+                setTimeout(() => {
+                    evaluateTurnProgress();
+                }, 900);
+            }, 500);
+        }
+
+
+        function evaluateTurnProgress() {
+            if(aiScore <= 0 || playerScore <= 0) {
+                handleMatchEnd();
+                return;
+            }
+
+            shotsInTurn++;
+            
+            if(shotsInTurn < 2) {
+                updateHUDTurnBadge();
+                if(turnOwner === 'PLAYER') {
+                    gameState = 'PLAYER_AIMING';
+                    inputLocked = false;
+                    document.getElementById('game-status').innerText = "SHOT 2: DRAG TO AIM";
+                    resetBallPosition();
+                } else {
+                    gameState = 'AI_TURN';
+                    resetBallPosition();
+                    setTimeout(performAITurn, 1200);
+                }
+            } else {
+                if(hitsInCurrentTurn >= 2) {
+                    showNotification("BALLS BACK!", "2/2 HITS = BONUS TURN!");
+                    shotsInTurn = 0;
+                    hitsInCurrentTurn = 0;
+                    updateHUDTurnBadge();
+                    
+                    setTimeout(() => {
+                        if(turnOwner === 'PLAYER') {
+                            gameState = 'PLAYER_AIMING';
+                            inputLocked = false;
+                            document.getElementById('game-status').innerText = "BONUS TURN";
+                            resetBallPosition();
+                        } else {
+                            gameState = 'AI_TURN';
+                            resetBallPosition();
+                            setTimeout(performAITurn, 1200);
+                        }
+                    }, 1400);
+                } else {
+                    switchTurnOwner();
+                }
+            }
+        }
+
+        function switchTurnOwner() {
+            gameState = 'TRANSITION';
+            inputLocked = true;
+            turnOwner = turnOwner === 'PLAYER' ? 'AI' : 'PLAYER';
+            shotsInTurn = 0;
+            hitsInCurrentTurn = 0;
+            updateHUDTurnBadge();
+
+            const turnInd = document.getElementById('turn-indicator');
+            const status = document.getElementById('game-status');
+
+            if(turnOwner === 'PLAYER') {
+                turnInd.innerText = "YOUR TURN";
+                turnInd.style.color = "#f59e0b";
+                status.innerText = "Camera panning to your side...";
+                showNotification("YOUR TURN", "PREPARE TO THROW");
+
+                setTimeout(() => {
+                    gameState = 'PLAYER_AIMING';
+                    inputLocked = false;
+                    status.innerText = "Drag Ball Back to Aim";
+                    turnInd.classList.add('anim-pulse');
+                    resetBallPosition();
+                }, 1400);
+            } else {
+                turnInd.innerText = "BOT'S TURN";
+                turnInd.style.color = "#f87171";
+                status.innerText = "Camera panning to Bot side...";
+                showNotification("BOT'S TURN", "BOT PREPARING SHOT");
+
+                setTimeout(() => {
+                    gameState = 'AI_TURN';
+                    turnInd.classList.add('anim-pulse');
+                    resetBallPosition();
+                    setTimeout(performAITurn, 1200);
+                }, 1400);
+            }
+        }
+
+        function performAITurn() {
+            if(gameState !== 'AI_TURN') return;
+
+            let validTargets = cups.filter(c => c.active && c.isPlayer);
+            if(validTargets.length === 0) return;
+
+            let target = validTargets[Math.floor(Math.random() * validTargets.length)];
+            let targetX = target.x;
+            let targetZ = target.z;
+
+            // Apply distinct variance to target coordinate logic dependent on difficulty setting
+            if (settings.difficulty === 'easy') {
+                targetX += (Math.random() - 0.5) * 3.5;
+                targetZ += (Math.random() - 0.5) * 3.5;
+            } else if (settings.difficulty === 'medium') {
+                targetX += (Math.random() - 0.5) * 1.5;
+                targetZ += (Math.random() - 0.5) * 1.5;
+            } else if (settings.difficulty === 'hard') {
+                targetX += (Math.random() - 0.5) * 0.5;
+                targetZ += (Math.random() - 0.5) * 0.5;
+            } else {
+                targetX += (Math.random() - 0.5) * 0.1;
+                targetZ += (Math.random() - 0.5) * 0.1;
+            }
+
+            const flightTime = 1.25;
+            const g = Math.abs(world.gravity.y);
+
+            let vx = (targetX - ballBody.position.x) / flightTime;
+            let vz = (targetZ - ballBody.position.z) / flightTime;
+            let vy = (target.y - ballBody.position.y + 0.5 * g * flightTime * flightTime) / flightTime;
+
+            // Add final layer of minor execution noise for realism
+            let errorMargin = (settings.difficulty === 'expert') ? 0.05 : 0.2;
+
+            vx += (Math.random() - 0.5) * errorMargin;
+            vz += (Math.random() - 0.5) * errorMargin;
+
+            document.getElementById('game-status').innerText = "AI THREW!";
+            executeThrow(vx, vy, vz);
+        }
+
+        function handleMatchEnd() {
+            gameState = 'GAME_OVER';
+            inputLocked = true;
+            stats.gamesPlayed++;
+            
+            const isWin = aiScore <= 0;
+            if(isWin) stats.wins++;
+
+            if(isWin) {
+                playSound('win');
+                triggerHaptic('win');
+            }
+
+            showNotification(
+                isWin ? "VICTORY!" : "GAME OVER", 
+                isWin ? "YOU CLEARED ALL CUPS!" : "AI ELIMINATED YOUR CUPS"
+            );
+
+            document.getElementById('turn-indicator').innerText = isWin ? "YOU WIN!" : "AI WINS!";
+            document.getElementById('game-status').innerText = "REFRESH TO PLAY AGAIN";
+        }
+
+        function handleReRack() {
+            if(gameState !== 'PLAYER_AIMING' || inputLocked || playerReRacks <= 0) return;
+
+            playerReRacks--;
+            document.getElementById('rerack-count').innerText = `(${playerReRacks})`;
+            if(playerReRacks === 0) {
+                document.getElementById('btn-rerack').classList.add('opacity-50', 'pointer-events-none');
+            }
+
+            const materials = {
+                tablePhysMat: tableBody.material,
+                ballPhysMat: ballBody.material,
+                cupPhysMat: cups[0] ? cups[0].body.material : tableBody.material
+            };
+            setupCups(materials);
+            showNotification("RE-RACKED!", "CUPS RE-ORGANIZED");
+        }
+
+
+        function updateHUDTurnBadge() {
+            const badgeP = document.getElementById('player-shots-badge');
+            const badgeAI = document.getElementById('ai-shots-badge');
+
+            if(turnOwner === 'PLAYER') {
+                badgeP.innerText = `SHOT ${shotsInTurn + 1}/2`;
+                badgeP.classList.remove('opacity-40');
+                badgeAI.classList.add('opacity-40');
+            } else {
+                badgeAI.innerText = `SHOT ${shotsInTurn + 1}/2`;
+                badgeAI.classList.remove('opacity-40');
+                badgeP.classList.add('opacity-40');
+            }
+        }
+
+        function updateCupIcons() {
+            const pBox = document.getElementById('player-cup-icons');
+            const aiBox = document.getElementById('ai-cup-icons');
+
+            pBox.innerHTML = Array(playerScore).fill('<i class="fa-solid fa-wine-glass"></i>').join('');
+            aiBox.innerHTML = Array(aiScore).fill('<i class="fa-solid fa-wine-glass"></i>').join('');
+        }
+
+        function showNotification(mainText, subText = "") {
+            const msg = document.getElementById('center-message');
+            const sub = document.getElementById('sub-message');
+
+            msg.innerText = mainText;
+            sub.innerText = subText;
+
+            msg.style.opacity = '1';
+            msg.style.transform = 'scale(1)';
+            sub.style.opacity = '1';
+
+            setTimeout(() => {
+                msg.style.opacity = '0';
+                msg.style.transform = 'scale(0.75)';
+                sub.style.opacity = '0';
+            }, 1400);
+        }
+
+        function toggleSettingsModal() {
+            document.getElementById('modal-container').classList.remove('hidden');
+            document.getElementById('settings-modal').classList.remove('hidden');
+            document.getElementById('stats-modal').classList.add('hidden');
+        }
+
+        function toggleStatsModal() {
+            document.getElementById('stat-games').innerText = stats.gamesPlayed;
+            document.getElementById('stat-wins').innerText = stats.wins;
+            document.getElementById('stat-bounces').innerText = stats.bounceHits;
+            
+            const acc = stats.shots > 0 ? Math.round((stats.hits / stats.shots) * 100) : 0;
+            document.getElementById('stat-accuracy').innerText = `${acc}%`;
+
+            document.getElementById('modal-container').classList.remove('hidden');
+            document.getElementById('stats-modal').classList.remove('hidden'); // Fixed: was incorrectly adding hidden class
+            document.getElementById('settings-modal').classList.add('hidden');
+        }
+
+        function closeModals() {
+            document.getElementById('modal-container').classList.add('hidden');
+            document.getElementById('settings-modal').classList.add('hidden');
+            document.getElementById('stats-modal').classList.add('hidden');
+        }
+
+        function startGame() {
+            document.getElementById('main-menu').classList.add('hidden');
+            playerScore = 10;
+            aiScore = 10;
+            playerReRacks = 2;
+            turnOwner = 'PLAYER';
+            shotsInTurn = 0;
+            hitsInCurrentTurn = 0;
+            
+            document.getElementById('player-score').innerText = '10 CUPS';
+            document.getElementById('ai-score').innerText = '10 CUPS';
+            document.getElementById('rerack-count').innerText = `(2)`;
+            document.getElementById('btn-rerack').classList.remove('opacity-50', 'pointer-events-none');
+            
+            const materials = {
+                tablePhysMat: tableBody.material,
+                ballPhysMat: ballBody.material,
+                cupPhysMat: cups[0] ? cups[0].body.material : tableBody.material
+            };
+            setupCups(materials);
+            
+            gameState = 'PLAYER_AIMING';
+            inputLocked = false;
+            document.getElementById('turn-indicator').innerText = "YOUR TURN";
+            document.getElementById('turn-indicator').style.color = "#f59e0b";
+            document.getElementById('game-status').innerText = "Drag Ball Back to Aim";
+            
+            updateHUDTurnBadge();
+            resetBallPosition();
+        }
+
+        function exitToMainMenu() {
+            closeModals();
+            document.getElementById('main-menu').classList.remove('hidden');
+            gameState = 'GAME_OVER';
+            inputLocked = true;
+        }
+
+        function setDifficulty(diff) {
+            settings.difficulty = diff;
+            document.querySelectorAll('.diff-btn').forEach(btn => {
+                btn.className = 'diff-btn px-2 py-2 rounded-lg text-xs font-bold border border-gray-700 bg-slate-800 text-white';
+            });
+            const activeBtn = document.getElementById(`diff-${diff}`);
+            activeBtn.className = 'diff-btn px-2 py-2 rounded-lg text-xs font-bold border border-amber-500 bg-amber-500/20 text-amber-400';
+        }
+
+        let flightTimer = 0;
+        function updatePhysics() {
+            world.step(1 / 60);
+            updateVisuals();
+
+            // Cup Physical Shake Animations
+            cups.forEach(cup => {
+                if(cup.shakeTime > 0) {
+                    cup.shakeTime -= 0.016;
+                    cup.meshGroup.position.x = cup.x + Math.sin(cup.shakeTime * 45) * 0.08 * cup.shakeTime;
+                    if(cup.shakeTime <= 0) cup.meshGroup.position.x = cup.x;
+                }
+            });
+
+            // Splash Particle Animations
+            for(let i = splashParticles.length - 1; i >= 0; i--) {
+                const p = splashParticles[i];
+                p.mesh.position.addScaledVector(p.vel, 0.016);
+                p.vel.y -= 9.8 * 0.016;
+                p.life -= 0.03;
+                p.mesh.material.opacity = p.life;
+                if(p.life <= 0) {
+                    scene.remove(p.mesh);
+                    splashParticles.splice(i, 1);
+                }
+            }
+
+            // In-flight physics & collision monitoring
+            if(gameState === 'IN_FLIGHT') {
+                let hitCup = checkCupHits();
+                if(hitCup) {
+                    handleHit(hitCup);
+                    return;
+                }
+
+                let speed = ballBody.velocity.length();
+
+                // Advanced Dynamic Anti-Stuck logic: Check for ball stalled out near cup rims continuously
+                if (speed < 0.5 && ballBody.position.y > 1.0 && ballBody.position.y < 1.9) {
+                    stuckFrames++;
+                    if (stuckFrames > 25) {
+                        ballBody.velocity.x += (Math.random() - 0.5) * 3;
+                        ballBody.velocity.z += (Math.random() - 0.5) * 3;
+                        ballBody.velocity.y += 1.5;
+                        stuckFrames = 0;
+                    }
+                } else {
+                    stuckFrames = 0;
+                }
+
+                if(ballBody.position.y < -3 || speed < 0.35) {
+                    if(flightTimer === 0) flightTimer = Date.now();
+
+                    if(Date.now() - flightTimer > 600) {
+                        flightTimer = 0;
+                        handleMiss();
+                    }
+                } else {
+                    flightTimer = 0;
+                }
+            }
+        }
+
+
+        function updateVisuals() {
+            ballMesh.position.copy(ballBody.position);
+            ballMesh.quaternion.copy(ballBody.quaternion);
+
+            // Dynamic Smooth Lerping Camera Controller
+            if(gameState === 'IN_FLIGHT' || gameState === 'IMPACT_HOLD') {
+                let targetCamPos = new THREE.Vector3();
+                let targetLookAt = new THREE.Vector3();
+
+                if(turnOwner === 'PLAYER') {
+                    targetCamPos.set(
+                        ballBody.position.x * 0.35,
+                        Math.max(ballBody.position.y + 2.2, 3.2),
+                        ballBody.position.z + 5.2
+                    );
+                    targetLookAt.set(
+                        ballBody.position.x * 0.2,
+                        ballBody.position.y * 0.5,
+                        ballBody.position.z - 3.5
+                    );
+                } else {
+                    targetCamPos.set(
+                        ballBody.position.x * 0.35,
+                        Math.max(ballBody.position.y + 2.2, 3.2),
+                        ballBody.position.z - 5.2
+                    );
+                    targetLookAt.set(
+                        ballBody.position.x * 0.2,
+                        ballBody.position.y * 0.5,
+                        ballBody.position.z + 3.5
+                    );
+                }
+
+                camera.position.lerp(targetCamPos, 0.08);
+                currentCamLookAt.lerp(targetLookAt, 0.08);
+                camera.lookAt(currentCamLookAt);
+            } else {
+                // Return smoothly to Home Camera position
+                let homePos = turnOwner === 'PLAYER' ? PLAYER_CAM_HOME : AI_CAM_HOME;
+                let homeLook = turnOwner === 'PLAYER' ? PLAYER_CAM_LOOK : AI_CAM_LOOK;
+
+                camera.position.lerp(homePos, 0.06);
+                currentCamLookAt.lerp(homeLook, 0.06);
+                camera.lookAt(currentCamLookAt);
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            updatePhysics();
+            renderer.render(scene, camera);
+        }
+
+        window.onload = () => {
+            initThree();
+            const materials = initPhysics();
+            createEnvironment(materials);
+            setupCups(materials);
+            resetBallPosition();
+            initControls();
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+
+            animate();
+        };
+    </script>
+</body>
+</html>
