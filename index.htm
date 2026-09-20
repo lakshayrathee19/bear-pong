@@ -79,35 +79,36 @@
     <div id="ui-layer" class="flex flex-col justify-between p-4 md:p-6 select-none">
         
         <!-- Header / Scoreboard Bar -->
-        <div class="flex justify-between items-stretch w-full max-w-5xl mx-auto gap-3">
+        <!-- Fix 5: Mobile Bot Score Overflow - Adjusted gaps, added min-w-0, and responsive padding to ensure flex correctly shrinks the center and fits all panels on screen. -->
+        <div class="flex justify-between items-stretch w-full max-w-5xl mx-auto gap-1 sm:gap-3">
             
             <!-- Player Score Panel -->
-            <div class="ui-panel px-4 py-3 flex-1 max-w-[210px] flex flex-col justify-center border-l-4 border-l-amber-500">
+            <div class="ui-panel px-2 sm:px-4 py-3 flex-1 min-w-0 max-w-[210px] flex flex-col justify-center border-l-4 border-l-amber-500">
                 <div class="flex justify-between items-center mb-1">
-                    <span class="text-xs text-amber-400 font-bold tracking-wider flex items-center gap-1.5">
+                    <span class="text-xs text-amber-400 font-bold tracking-wider flex items-center gap-1.5 truncate">
                         <i class="fa-solid fa-paw text-amber-500"></i> YOU
                     </span>
-                    <span id="player-shots-badge" class="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full font-mono font-bold">SHOT 1/2</span>
+                    <span id="player-shots-badge" class="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full font-mono font-bold whitespace-nowrap ml-1">SHOT 1/2</span>
                 </div>
-                <div class="text-2xl md:text-3xl font-black text-white" id="player-score">10 CUPS</div>
+                <div class="text-2xl md:text-3xl font-black text-white truncate" id="player-score">10 CUPS</div>
                 <div id="player-cup-icons" class="flex gap-1 mt-1 text-red-500 text-xs flex-wrap"></div>
             </div>
             
             <!-- Turn & Game Status Panel -->
-            <div class="ui-panel px-6 py-3 text-white text-center flex flex-col justify-center min-w-[180px] md:min-w-[260px]">
-                <div id="turn-indicator" class="text-lg md:text-xl font-black text-amber-400 anim-pulse tracking-wide uppercase">YOUR TURN</div>
-                <div id="game-status" class="text-xs text-gray-300 font-medium mt-0.5 uppercase tracking-widest">Drag Ball Back to Aim</div>
+            <div class="ui-panel px-2 sm:px-6 py-3 text-white text-center flex flex-col justify-center min-w-0 flex-shrink sm:min-w-[260px]">
+                <div id="turn-indicator" class="text-lg md:text-xl font-black text-amber-400 anim-pulse tracking-wide uppercase truncate">YOUR TURN</div>
+                <div id="game-status" class="text-[10px] sm:text-xs text-gray-300 font-medium mt-0.5 uppercase tracking-widest truncate">Drag Ball Back to Aim</div>
             </div>
 
             <!-- AI Score Panel -->
-            <div class="ui-panel px-4 py-3 flex-1 max-w-[210px] flex flex-col justify-center border-r-4 border-r-red-500 text-right">
+            <div class="ui-panel px-2 sm:px-4 py-3 flex-1 min-w-0 max-w-[210px] flex flex-col justify-center border-r-4 border-r-red-500 text-right">
                 <div class="flex justify-between items-center mb-1 flex-row-reverse">
-                    <span class="text-xs text-red-400 font-bold tracking-wider flex items-center gap-1.5">
+                    <span class="text-xs text-red-400 font-bold tracking-wider flex items-center gap-1.5 truncate">
                         BOT <i class="fa-solid fa-robot text-red-500"></i>
                     </span>
-                    <span id="ai-shots-badge" class="text-[10px] bg-red-500/20 text-red-300 px-2 py-0.5 rounded-full font-mono font-bold opacity-40">SHOT 1/2</span>
+                    <span id="ai-shots-badge" class="text-[10px] bg-red-500/20 text-red-300 px-2 py-0.5 rounded-full font-mono font-bold opacity-40 whitespace-nowrap mr-1">SHOT 1/2</span>
                 </div>
-                <div class="text-2xl md:text-3xl font-black text-white" id="ai-score">10 CUPS</div>
+                <div class="text-2xl md:text-3xl font-black text-white truncate" id="ai-score">10 CUPS</div>
                 <div id="ai-cup-icons" class="flex gap-1 mt-1 text-red-500 text-xs flex-wrap justify-end"></div>
             </div>
         </div>
@@ -252,15 +253,19 @@
         };
 
         // State Machine
-        let gameState = 'GAME_OVER'; // PLAYER_AIMING, IN_FLIGHT, IMPACT_HOLD, RESOLVING, TRANSITION, AI_TURN, GAME_OVER, CHOOSING_CUP
-        let turnOwner = 'PLAYER'; // PLAYER, AI
-        let shotsInTurn = 0; // 0 or 1
-        let hitsInCurrentTurn = 0; // For "Balls Back"
+        let gameState = 'GAME_OVER'; 
+        let turnOwner = 'PLAYER'; 
+        let shotsInTurn = 0; 
+        let hitsInCurrentTurn = 0; 
         let playerScore = 10;
         let aiScore = 10;
         let playerReRacks = 2;
         let inputLocked = true;
         let stuckFrames = 0;
+
+        // Fix 4: Ball Timeout variables
+        let shotStartTime = 0;
+        let bounceTime = 0;
 
         // Interaction state
         let isDragging = false;
@@ -651,6 +656,8 @@
                 if(gameState !== 'IN_FLIGHT') return;
                 if(e.body === tableBody) {
                     shotBouncedOnTable = true;
+                    // Fix 4: Log bounce time for anti-rolling resolution
+                    if(bounceTime === 0) bounceTime = Date.now();
                     playSound('table');
                     triggerHaptic('bounce');
                 } else if(e.body.isCupRim) {
@@ -765,12 +772,17 @@
                 const dir = isPlayerSide ? -1 : 1;
                 const spacing = CUP_RADIUS * 2.15;
 
-                let rowCounts = [4, 3, 2, 1];
-                if(count === 6) rowCounts = [3, 2, 1];
-                else if(count === 4) rowCounts = [2, 2];
-                else if(count === 3) rowCounts = [2, 1];
-                else if(count === 2) rowCounts = [1, 1];
-                else if(count === 1) rowCounts = [1];
+                // PRESERVED: Correct Re-rack behavior ensures eliminated cups aren't respawned
+                let rowCounts = [4, 3, 2, 1]; // Default 10 cups
+                if (count === 9) rowCounts = [3, 3, 2, 1];
+                else if (count === 8) rowCounts = [3, 3, 2];
+                else if (count === 7) rowCounts = [3, 2, 2];
+                else if (count === 6) rowCounts = [3, 2, 1];
+                else if (count === 5) rowCounts = [3, 2];
+                else if (count === 4) rowCounts = [2, 2];
+                else if (count === 3) rowCounts = [2, 1];
+                else if (count === 2) rowCounts = [1, 1];
+                else if (count === 1) rowCounts = [1];
 
                 rowCounts.forEach((numCups, rowIndex) => {
                     let startX = -((numCups - 1) * spacing) / 2;
@@ -958,6 +970,10 @@
             ballBody.updateMassProperties();
             ballBody.wakeUp();
 
+            // Fix 4: Reset ball timeouts on new throw
+            shotStartTime = Date.now();
+            bounceTime = 0; 
+            
             ballBody.velocity.set(vx, vy, vz);
             gameState = 'IN_FLIGHT';
             stats.shots++;
@@ -978,26 +994,24 @@
                 const topY = cup.y + CUP_HEIGHT / 2;
                 const bottomY = cup.y - CUP_HEIGHT / 2;
 
-                // MODERATELY FORGIVING Y-THRESHOLD:
-                // Catch the ball just as it breaks the rim plane (topY + 0.12),
-                // before the physics engine violently bounces it out from grazing the inner rim.
-                if(ballBody.position.y <= topY + 0.12 && ballBody.position.y > bottomY + 0.05) {
+                // Fix 3: Increased Y-tolerance mapping to make player shot detection noticeably more forgiving at rim level
+                const yTolerance = (turnOwner === 'PLAYER') ? 0.35 : 0.12;
+
+                if(ballBody.position.y <= topY + yTolerance && ballBody.position.y > bottomY + 0.05) {
                     let dx = ballBody.position.x - cup.x;
                     let dz = ballBody.position.z - cup.z;
                     let dist = Math.sqrt(dx * dx + dz * dz);
 
-                    // FORGIVING ENTRY ZONE (OUTCOME 1):
-                    // CUP_RADIUS is 0.48. 68% of that is ~0.326.
-                    // This is larger than the strict physical swish zone, allowing a well-aimed 
-                    // shot to enter comfortably. However, it is strict enough that outer rim hits 
-                    // (dist > 0.35) will correctly fall through to physics and bounce (OUTCOME 2).
-                    if(dist <= CUP_RADIUS * 0.68) {
+                    // Fix 3: Forgiving Entry Zone expanded for player to make shots significantly more satisfying
+                    // The player's hit cylinder is nearly the whole cup width, increasing dunk success on close rim-outs.
+                    const distTolerance = (turnOwner === 'PLAYER') ? (CUP_RADIUS * 0.95) : (CUP_RADIUS * 0.68);
+
+                    if(dist <= distTolerance) {
                         
-                        // TRAJECTORY CHECK:
-                        // Ball must be travelling downward into the cup.
-                        // We allow a slight upward velocity (< 0.5) to forgive micro-deflections 
-                        // that happened off the inner rim in the exact frame we check.
-                        if(ballBody.velocity.y < 0.5) {
+                        // Fix 3: Velocity check made more forgiving for player so slight upward bounces still score
+                        const velTolerance = (turnOwner === 'PLAYER') ? 3.0 : 0.5;
+
+                        if(ballBody.velocity.y < velTolerance) {
                             
                             // Visual Polish: Snap the ball slightly down into the cup 
                             // so the freeze-frame "IMPACT_HOLD" state looks exactly like 
@@ -1201,36 +1215,55 @@
             if(validTargets.length === 0) return;
 
             let target = validTargets[Math.floor(Math.random() * validTargets.length)];
+            
+            // Fix 1 & 2: Bot Aim Logic & Difficulty Precision Overhaul.
+            // Target the exact 3D center of the cup opening slightly deep and slightly high for a perfect rim arc.
+            const dir = target.isPlayer ? 1 : -1;
             let targetX = target.x;
-            let targetZ = target.z;
+            let targetZ = target.z + (dir * 0.15); 
+            let targetAimY = target.y + (CUP_HEIGHT / 2) + 0.15;
 
-            // Apply distinct variance to target coordinate logic dependent on difficulty setting
+            // Heavily differentiated aim accuracy logic dependent entirely on difficulty settings.
+            let spread = 0;
+            let executionNoise = 0;
+
             if (settings.difficulty === 'easy') {
-                targetX += (Math.random() - 0.5) * 3.5;
-                targetZ += (Math.random() - 0.5) * 3.5;
+                spread = 1.3;       // Large deviation, will frequently miss completely 
+                executionNoise = 0.5;
             } else if (settings.difficulty === 'medium') {
-                targetX += (Math.random() - 0.5) * 1.5;
-                targetZ += (Math.random() - 0.5) * 1.5;
+                spread = 0.45;      // Moderate deviation, occasionally hits or rim outs
+                executionNoise = 0.2;
             } else if (settings.difficulty === 'hard') {
-                targetX += (Math.random() - 0.5) * 0.5;
-                targetZ += (Math.random() - 0.5) * 0.5;
-            } else {
-                targetX += (Math.random() - 0.5) * 0.1;
-                targetZ += (Math.random() - 0.5) * 0.1;
+                spread = 0.15;      // Tight aim, highly consistent
+                executionNoise = 0.05;
+            } else { // expert
+                spread = 0.01;      // Laser precision, mathematical center point targeted
+                executionNoise = 0.01;
             }
 
-            const flightTime = 1.25;
-            const g = Math.abs(world.gravity.y);
+            // Apply selected difficulty aim deviation offset
+            targetX += (Math.random() - 0.5) * spread;
+            targetZ += (Math.random() - 0.5) * spread;
 
-            let vx = (targetX - ballBody.position.x) / flightTime;
-            let vz = (targetZ - ballBody.position.z) / flightTime;
-            let vy = (target.y - ballBody.position.y + 0.5 * g * flightTime * flightTime) / flightTime;
+            // Calculate exact kinematics mapping the throw distance dynamically 
+            const distZ = Math.abs(targetZ - ballBody.position.z);
+            const flightTime = distZ / 17.5; // Constant forward velocity gives realistic dynamic arcs
 
-            // Add final layer of minor execution noise for realism
-            let errorMargin = (settings.difficulty === 'expert') ? 0.05 : 0.2;
+            const g = Math.abs(world.gravity.y); 
+            // Minimal multiplier to safely counteract air resistance (linear damping) on the flight
+            const dampingCompensation = 1.02; 
 
-            vx += (Math.random() - 0.5) * errorMargin;
-            vz += (Math.random() - 0.5) * errorMargin;
+            // Execute mathematically correct parabolic initial velocities
+            let vx = ((targetX - ballBody.position.x) / flightTime) * dampingCompensation;
+            let vz = ((targetZ - ballBody.position.z) / flightTime) * dampingCompensation;
+            
+            // vy derived from: y = y0 + vy*t - 0.5*g*t^2 
+            let vy = (targetAimY - ballBody.position.y + 0.5 * g * flightTime * flightTime) / flightTime;
+
+            // Add final mechanical variance noise based on difficulty
+            vx += (Math.random() - 0.5) * executionNoise;
+            vz += (Math.random() - 0.5) * executionNoise;
+            vy += (Math.random() - 0.5) * (executionNoise * 0.5);
 
             document.getElementById('game-status').innerText = "AI THREW!";
             executeThrow(vx, vy, vz);
@@ -1272,6 +1305,8 @@
                 ballPhysMat: ballBody.material,
                 cupPhysMat: cups[0] ? cups[0].body.material : tableBody.material
             };
+            
+            // setupCups inherently respects aiScore and playerScore tracking to rebuild cleanly
             setupCups(materials);
             showNotification("RE-RACKED!", "CUPS RE-ORGANIZED");
         }
@@ -1333,7 +1368,7 @@
             document.getElementById('stat-accuracy').innerText = `${acc}%`;
 
             document.getElementById('modal-container').classList.remove('hidden');
-            document.getElementById('stats-modal').classList.remove('hidden'); // Fixed: was incorrectly adding hidden class
+            document.getElementById('stats-modal').classList.remove('hidden'); 
             document.getElementById('settings-modal').classList.add('hidden');
         }
 
@@ -1440,10 +1475,24 @@
                     stuckFrames = 0;
                 }
 
-                if(ballBody.position.y < -3 || speed < 0.35) {
+                // Fix 4: Hard Resolution Timeouts to prevent infinite rolling 
+                let timeSinceThrow = Date.now() - shotStartTime;
+                
+                // Maximum Absolute Lifecycle (5.5 Seconds)
+                if (timeSinceThrow > 5500) {
+                    handleMiss();
+                    return;
+                }
+                // Moderate lifecycle limit after first meaningful bounce interaction (3.0 Seconds)
+                if (shotBouncedOnTable && bounceTime !== 0 && (Date.now() - bounceTime > 3000)) {
+                    handleMiss();
+                    return;
+                }
+
+                if(ballBody.position.y < -3 || speed < 0.25) { 
                     if(flightTimer === 0) flightTimer = Date.now();
 
-                    if(Date.now() - flightTimer > 600) {
+                    if(Date.now() - flightTimer > 500) {
                         flightTimer = 0;
                         handleMiss();
                     }
