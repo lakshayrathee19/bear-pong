@@ -74,10 +74,20 @@
         <h1 class="text-5xl md:text-7xl font-black text-amber-500 mb-2 tracking-tight drop-shadow-md">BEAR PONG</h1>
         <p class="text-amber-200/60 font-medium mb-10 tracking-widest uppercase text-sm">3D Physics Cup Pong</p>
         
-        <!-- Fix 3: Separated VS BOT and 1V1 into distinct mode options -->
-        <div class="flex flex-col gap-4 w-full max-w-xs px-4">
-            <button onclick="startGame('VS_BOT')" class="ui-panel w-full py-4 text-xl md:text-2xl font-bold text-white bg-amber-600 hover:bg-amber-500 rounded-2xl btn-action shadow-lg shadow-amber-600/30">VS BOT</button>
+        <!-- Mode Selection -->
+        <div id="mode-selection" class="flex flex-col gap-4 w-full max-w-xs px-4">
+            <button onclick="showDifficultyMenu()" class="ui-panel w-full py-4 text-xl md:text-2xl font-bold text-white bg-amber-600 hover:bg-amber-500 rounded-2xl btn-action shadow-lg shadow-amber-600/30">VS BOT</button>
             <button onclick="startGame('1V1')" class="ui-panel w-full py-4 text-xl md:text-2xl font-bold text-white bg-amber-600 hover:bg-amber-500 rounded-2xl btn-action shadow-lg shadow-amber-600/30">1V1</button>
+        </div>
+
+        <!-- Difficulty Selection -->
+        <div id="diff-selection" class="flex flex-col gap-3 w-full max-w-xs px-4 hidden">
+            <div class="text-amber-400 font-bold text-sm tracking-widest uppercase text-center mb-1 drop-shadow-md">SELECT DIFFICULTY</div>
+            <button onclick="startVsBot('easy')" class="ui-panel w-full py-3 text-lg font-bold text-white bg-slate-800 hover:bg-slate-700 rounded-xl btn-action shadow-lg">EASY</button>
+            <button onclick="startVsBot('medium')" class="ui-panel w-full py-3 text-lg font-bold text-white bg-slate-800 hover:bg-slate-700 rounded-xl btn-action shadow-lg border border-amber-500/50">MEDIUM</button>
+            <button onclick="startVsBot('hard')" class="ui-panel w-full py-3 text-lg font-bold text-white bg-slate-800 hover:bg-slate-700 rounded-xl btn-action shadow-lg">HARD</button>
+            <button onclick="startVsBot('expert')" class="ui-panel w-full py-3 text-lg font-bold text-white bg-slate-800 hover:bg-slate-700 rounded-xl btn-action shadow-lg">PRO</button>
+            <button onclick="backToModeSelection()" class="mt-2 text-xs font-bold text-gray-400 hover:text-white tracking-widest uppercase py-2">BACK</button>
         </div>
     </div>
 
@@ -88,7 +98,6 @@
             
             <!-- Player Score Panel -->
             <div class="ui-panel px-2 sm:px-4 py-3 flex-1 min-w-0 max-w-[210px] flex flex-col justify-center border-l-4 border-l-amber-500">
-                <!-- Fix 1: Player label flex layout updated to stack label above badge on mobile, but keep horizontal on desktop -->
                 <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-1 gap-1 sm:gap-0">
                     <span id="player-label-text" class="text-xs text-amber-400 font-bold tracking-wider flex items-center gap-1.5 truncate">
                         <i class="fa-solid fa-paw text-amber-500"></i> YOU
@@ -107,7 +116,6 @@
 
             <!-- AI Score Panel -->
             <div class="ui-panel px-2 sm:px-4 py-3 flex-1 min-w-0 max-w-[210px] flex flex-col justify-center border-r-4 border-r-red-500 text-right">
-                <!-- Fix 1: AI/Player 2 label layout updated to stack label above badge on mobile -->
                 <div class="flex flex-col sm:flex-row justify-between items-end sm:items-center mb-1 gap-1 sm:gap-0 sm:flex-row-reverse">
                     <span id="ai-label-text" class="text-xs text-red-400 font-bold tracking-wider flex items-center gap-1.5 truncate">
                         BOT <i class="fa-solid fa-robot text-red-500"></i>
@@ -176,16 +184,6 @@
             </div>
             
             <div class="space-y-4">
-                <div>
-                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">AI Opponent Skill</label>
-                    <div class="grid grid-cols-4 gap-2">
-                        <button onclick="setDifficulty('easy')" id="diff-easy" class="diff-btn px-2 py-2 rounded-lg text-xs font-bold border border-gray-700 bg-slate-800">EASY</button>
-                        <button onclick="setDifficulty('medium')" id="diff-medium" class="diff-btn px-2 py-2 rounded-lg text-xs font-bold border border-amber-500 bg-amber-500/20 text-amber-400">MED</button>
-                        <button onclick="setDifficulty('hard')" id="diff-hard" class="diff-btn px-2 py-2 rounded-lg text-xs font-bold border border-gray-700 bg-slate-800">HARD</button>
-                        <button onclick="setDifficulty('expert')" id="diff-expert" class="diff-btn px-2 py-2 rounded-lg text-xs font-bold border border-gray-700 bg-slate-800">PRO</button>
-                    </div>
-                </div>
-
                 <div class="flex justify-between items-center py-2 border-t border-gray-800">
                     <span class="text-sm font-semibold">Bounce Shot = 2 Cups</span>
                     <input type="checkbox" id="toggle-bounce" checked onchange="settings.bounceTwoCups = this.checked" class="w-5 h-5 accent-amber-400 cursor-pointer">
@@ -259,7 +257,7 @@
         };
 
         // State Machine
-        let gameMode = 'VS_BOT'; // Fix 2: Track active game mode (VS_BOT or 1V1)
+        let gameMode = 'VS_BOT'; 
         let gameState = 'GAME_OVER'; 
         let turnOwner = 'PLAYER'; 
         let shotsInTurn = 0; 
@@ -273,6 +271,23 @@
 
         let shotStartTime = 0;
         let bounceTime = 0;
+
+        // Fix 2: Game Timeout Tracker to completely stop bot/loops upon exiting
+        let gameTimeouts = [];
+        
+        function setGameTimeout(cb, delay) {
+            let id = setTimeout(() => {
+                if (gameState === 'GAME_OVER') return;
+                cb();
+            }, delay);
+            gameTimeouts.push(id);
+            return id;
+        }
+
+        function clearGameTimeouts() {
+            gameTimeouts.forEach(id => clearTimeout(id));
+            gameTimeouts = [];
+        }
 
         // Interaction state
         let isDragging = false;
@@ -832,6 +847,41 @@
                 }
 
                 if (gameState === 'CHOOSING_CUP') {
+                    let targetIsPlayer = (turnOwner === 'AI');
+                    let validCups = cups.filter(c => c.active && c.isPlayer === targetIsPlayer);
+                    let closestCup = null;
+                    let closestDist = Infinity;
+
+                    const tempV = new THREE.Vector3();
+                    
+                    validCups.forEach(c => {
+                        tempV.set(c.x, c.y + CUP_HEIGHT/2, c.z);
+                        tempV.project(camera);
+                        
+                        const screenX = (tempV.x * 0.5 + 0.5) * window.innerWidth;
+                        const screenY = (-(tempV.y * 0.5) + 0.5) * window.innerHeight;
+                        
+                        const dx = screenX - clientX;
+                        const dy = screenY - clientY;
+                        const dist = Math.sqrt(dx*dx + dy*dy);
+                        
+                        if (dist < closestDist) {
+                            closestDist = dist;
+                            closestCup = c;
+                        }
+                    });
+
+                    // Very generous threshold (150px) allows selecting cups easily even if physically occluded
+                    if (closestCup && closestDist < 150) {
+                        removeCup(closestCup);
+                        updateCupIcons();
+                        gameState = 'IMPACT_HOLD';
+                        showNotification("CUP REMOVED", "");
+                        setGameTimeout(() => evaluateTurnProgress(), 1000);
+                        return;
+                    }
+                    
+                    // Fallback to strict raycaster
                     mouse.x = (clientX / window.innerWidth) * 2 - 1;
                     mouse.y = -(clientY / window.innerHeight) * 2 + 1;
                     raycaster.setFromCamera(mouse, camera);
@@ -839,22 +889,19 @@
                     const intersects = raycaster.intersectObjects(scene.children, true);
                     for(let i=0; i<intersects.length; i++) {
                         let obj = intersects[i].object;
-                        // Fix 2: Support 1V1 Bounce Cup selection for either turnOwner
-                        let targetIsPlayer = (turnOwner === 'AI');
-                        let clickedCup = cups.find(c => c.active && c.isPlayer === targetIsPlayer && c.meshGroup.children.includes(obj));
+                        let clickedCup = validCups.find(c => c.meshGroup.children.includes(obj));
                         if (clickedCup) {
                             removeCup(clickedCup);
                             updateCupIcons();
                             gameState = 'IMPACT_HOLD';
                             showNotification("CUP REMOVED", "");
-                            setTimeout(() => evaluateTurnProgress(), 1000);
+                            setGameTimeout(() => evaluateTurnProgress(), 1000);
                             return;
                         }
                     }
                     return; 
                 }
 
-                // Fix 2: Input unlocks for Player 2 during 1V1 mode by relying purely on PLAYER_AIMING state
                 if(gameState !== 'PLAYER_AIMING' || inputLocked) return;
                 
                 initAudio();
@@ -883,7 +930,6 @@
                 let shapedP = 0.5 + 4 * Math.pow(p - 0.5, 3);
                 let mappedDy = shapedP * 0.5;
 
-                // Fix 2: Mirror physics trajectory when Player 2 is throwing from the opposite side
                 let p2Modifier = (turnOwner === 'AI') ? -1 : 1;
                 let forceZ = -mappedDy * 54 * p2Modifier;
                 let forceY = mappedDy * 22 + 8.2;
@@ -915,7 +961,6 @@
                     let shapedP = 0.5 + 4 * Math.pow(p - 0.5, 3);
                     let mappedDy = shapedP * 0.5;
 
-                    // Fix 2: Mirror final throw trajectory for Player 2
                     let p2Modifier = (turnOwner === 'AI') ? -1 : 1;
                     let forceZ = -mappedDy * 54 * p2Modifier;
                     let forceY = mappedDy * 22 + 8.2;
@@ -1005,7 +1050,6 @@
                 const topY = cup.y + CUP_HEIGHT / 2;
                 const bottomY = cup.y - CUP_HEIGHT / 2;
 
-                // Forgiving human mechanic is granted to either turnOwner in 1V1 mode
                 const isHumanShot = (turnOwner === 'PLAYER' || gameMode === '1V1');
                 const yTolerance = isHumanShot ? 0.35 : 0.12;
 
@@ -1071,19 +1115,18 @@
             if(isBounce) stats.bounceHits++;
 
             // Hold camera on physical Dunk moment before showing confirmation text
-            setTimeout(() => {
+            setGameTimeout(() => {
                 showNotification(
                     isBounce ? "BOUNCE DUNK!" : "DUNK!", 
                     isBounce ? "BONUS CUP ACTIVE" : "-1 CUP ELIMINATED"
                 );
 
-                setTimeout(() => {
+                setGameTimeout(() => {
                     removeCup(hitCup);
                     updateCupIcons();
 
                     if(isBounce) {
                         let opponentCups = cups.filter(c => c.active && c.isPlayer !== hitCup.isPlayer);
-                        // Fix 2: Give control to Player 2 for their bonus cup selection in 1V1
                         if(opponentCups.length > 1 && (turnOwner === 'PLAYER' || gameMode === '1V1')) {
                             gameState = 'CHOOSING_CUP';
                             document.getElementById('game-status').innerText = "BOUNCE BONUS: CLICK AN OPPONENT CUP TO REMOVE";
@@ -1123,11 +1166,11 @@
         function handleMiss() {
             gameState = 'IMPACT_HOLD';
             
-            setTimeout(() => {
+            setGameTimeout(() => {
                 showNotification("MISS", "");
                 playSound('table');
                 
-                setTimeout(() => {
+                setGameTimeout(() => {
                     evaluateTurnProgress();
                 }, 900);
             }, 500);
@@ -1150,7 +1193,6 @@
                     document.getElementById('game-status').innerText = "SHOT 2: DRAG TO AIM";
                     resetBallPosition();
                 } else {
-                    // Fix 2: Player 2 controls the next shot in 1V1 mode
                     if (gameMode === '1V1') {
                         gameState = 'PLAYER_AIMING';
                         inputLocked = false;
@@ -1159,7 +1201,7 @@
                     } else {
                         gameState = 'AI_TURN';
                         resetBallPosition();
-                        setTimeout(performAITurn, 1200);
+                        setGameTimeout(performAITurn, 1200);
                     }
                 }
             } else {
@@ -1169,14 +1211,13 @@
                     hitsInCurrentTurn = 0;
                     updateHUDTurnBadge();
                     
-                    setTimeout(() => {
+                    setGameTimeout(() => {
                         if(turnOwner === 'PLAYER') {
                             gameState = 'PLAYER_AIMING';
                             inputLocked = false;
                             document.getElementById('game-status').innerText = "BONUS TURN";
                             resetBallPosition();
                         } else {
-                            // Fix 2: Player 2 gets the balls back bonus in 1V1 mode
                             if (gameMode === '1V1') {
                                 gameState = 'PLAYER_AIMING';
                                 inputLocked = false;
@@ -1185,7 +1226,7 @@
                             } else {
                                 gameState = 'AI_TURN';
                                 resetBallPosition();
-                                setTimeout(performAITurn, 1200);
+                                setGameTimeout(performAITurn, 1200);
                             }
                         }
                     }, 1400);
@@ -1207,27 +1248,26 @@
             const status = document.getElementById('game-status');
 
             if(turnOwner === 'PLAYER') {
-                turnInd.innerText = gameMode === '1V1' ? "PLAYER 1'S TURN" : "YOUR TURN";
+                turnInd.innerText = gameMode === '1V1' ? "P1'S TURN" : "YOUR TURN";
                 turnInd.style.color = "#f59e0b";
-                status.innerText = gameMode === '1V1' ? "Camera panning to Player 1 side..." : "Camera panning to your side...";
-                showNotification(gameMode === '1V1' ? "PLAYER 1'S TURN" : "YOUR TURN", "PREPARE TO THROW");
+                status.innerText = gameMode === '1V1' ? "Camera panning to P1 side..." : "Camera panning to your side...";
+                showNotification(gameMode === '1V1' ? "P1'S TURN" : "YOUR TURN", "PREPARE TO THROW");
 
-                setTimeout(() => {
+                setGameTimeout(() => {
                     gameState = 'PLAYER_AIMING';
                     inputLocked = false;
                     status.innerText = "Drag Ball Back to Aim";
                     turnInd.classList.add('anim-pulse');
                     resetBallPosition();
-                    updateReRackUI(); // Update UI mapping to active player re-racks
+                    updateReRackUI(); 
                 }, 1400);
             } else {
-                // Fix 2: UI Context updates specifically for 1V1 vs VS_BOT mode
-                turnInd.innerText = gameMode === '1V1' ? "PLAYER 2'S TURN" : "BOT'S TURN";
+                turnInd.innerText = gameMode === '1V1' ? "P2'S TURN" : "BOT'S TURN";
                 turnInd.style.color = "#f87171";
-                status.innerText = gameMode === '1V1' ? "Camera panning to Player 2 side..." : "Camera panning to Bot side...";
-                showNotification(gameMode === '1V1' ? "PLAYER 2'S TURN" : "BOT'S TURN", gameMode === '1V1' ? "PREPARE TO THROW" : "BOT PREPARING SHOT");
+                status.innerText = gameMode === '1V1' ? "Camera panning to P2 side..." : "Camera panning to Bot side...";
+                showNotification(gameMode === '1V1' ? "P2'S TURN" : "BOT'S TURN", gameMode === '1V1' ? "PREPARE TO THROW" : "BOT PREPARING SHOT");
 
-                setTimeout(() => {
+                setGameTimeout(() => {
                     if (gameMode === '1V1') {
                         gameState = 'PLAYER_AIMING';
                         inputLocked = false;
@@ -1240,7 +1280,7 @@
                         turnInd.classList.add('anim-pulse');
                         resetBallPosition();
                         updateReRackUI();
-                        setTimeout(performAITurn, 1200);
+                        setGameTimeout(performAITurn, 1200);
                     }
                 }, 1400);
             }
@@ -1311,15 +1351,14 @@
                 triggerHaptic('win');
             }
 
-            // Fix 2: Standardize endgame text depending on active mode
             let winText = isWin ? "VICTORY!" : "GAME OVER";
             let subText = isWin ? "YOU CLEARED ALL CUPS!" : "AI ELIMINATED YOUR CUPS";
             let indText = isWin ? "YOU WIN!" : "AI WINS!";
 
             if (gameMode === '1V1') {
-                winText = isWin ? "PLAYER 1 WINS!" : "PLAYER 2 WINS!";
+                winText = isWin ? "P1 WINS!" : "P2 WINS!";
                 subText = "ALL CUPS CLEARED!";
-                indText = isWin ? "PLAYER 1 WINS!" : "PLAYER 2 WINS!";
+                indText = isWin ? "P1 WINS!" : "P2 WINS!";
             }
 
             showNotification(winText, subText);
@@ -1328,7 +1367,6 @@
         }
 
         function updateReRackUI() {
-            // Evaluates and renders exact re-rack counts corresponding to the active player taking the turn
             const reracks = turnOwner === 'PLAYER' ? playerReRacks : aiReRacks;
             document.getElementById('rerack-count').innerText = `(${reracks})`;
             
@@ -1338,7 +1376,6 @@
                 document.getElementById('btn-rerack').classList.remove('opacity-50', 'pointer-events-none');
             }
 
-            // Hide UI purely for AI turn
             if (turnOwner === 'AI' && gameMode === 'VS_BOT') {
                 document.getElementById('btn-rerack').style.display = 'none';
             } else {
@@ -1349,7 +1386,6 @@
         function handleReRack() {
             if(gameState !== 'PLAYER_AIMING' || inputLocked) return;
 
-            // Decoupled tracker mapping re-racks correctly in 1V1
             if (turnOwner === 'PLAYER') {
                 if(playerReRacks <= 0) return;
                 playerReRacks--;
@@ -1405,6 +1441,7 @@
             msg.style.transform = 'scale(1)';
             sub.style.opacity = '1';
 
+            // Safe to leave this UI logic as setTimeout
             setTimeout(() => {
                 msg.style.opacity = '0';
                 msg.style.transform = 'scale(0.75)';
@@ -1437,8 +1474,23 @@
             document.getElementById('stats-modal').classList.add('hidden');
         }
 
+        function showDifficultyMenu() {
+            document.getElementById('mode-selection').classList.add('hidden');
+            document.getElementById('diff-selection').classList.remove('hidden');
+        }
+
+        function backToModeSelection() {
+            document.getElementById('diff-selection').classList.add('hidden');
+            document.getElementById('mode-selection').classList.remove('hidden');
+        }
+
+        function startVsBot(diff) {
+            settings.difficulty = diff;
+            startGame('VS_BOT');
+        }
+
         function startGame(mode = 'VS_BOT') {
-            gameMode = mode; // Fix 2 & 3: Lock Mode execution from Main Menu UI interactions
+            gameMode = mode; 
             document.getElementById('main-menu').classList.add('hidden');
             playerScore = 10;
             aiScore = 10;
@@ -1448,10 +1500,9 @@
             shotsInTurn = 0;
             hitsInCurrentTurn = 0;
             
-            // Render explicit player terminology based on game mode state
             if (gameMode === '1V1') {
-                document.getElementById('player-label-text').innerHTML = '<i class="fa-solid fa-user text-amber-500"></i> PLAYER 1';
-                document.getElementById('ai-label-text').innerHTML = 'PLAYER 2 <i class="fa-solid fa-user text-red-500"></i>';
+                document.getElementById('player-label-text').innerHTML = '<i class="fa-solid fa-user text-amber-500"></i> P1';
+                document.getElementById('ai-label-text').innerHTML = 'P2 <i class="fa-solid fa-user text-red-500"></i>';
             } else {
                 document.getElementById('player-label-text').innerHTML = '<i class="fa-solid fa-paw text-amber-500"></i> YOU';
                 document.getElementById('ai-label-text').innerHTML = 'BOT <i class="fa-solid fa-robot text-red-500"></i>';
@@ -1470,7 +1521,7 @@
             
             gameState = 'PLAYER_AIMING';
             inputLocked = false;
-            document.getElementById('turn-indicator').innerText = gameMode === '1V1' ? "PLAYER 1'S TURN" : "YOUR TURN";
+            document.getElementById('turn-indicator').innerText = gameMode === '1V1' ? "P1'S TURN" : "YOUR TURN";
             document.getElementById('turn-indicator').style.color = "#f59e0b";
             document.getElementById('game-status').innerText = "Drag Ball Back to Aim";
             
@@ -1479,19 +1530,14 @@
         }
 
         function exitToMainMenu() {
+            // Fix 2: Clean up entire game instance tracking loop to stop any pending bot or game state modifications
+            clearGameTimeouts(); 
             closeModals();
             document.getElementById('main-menu').classList.remove('hidden');
+            document.getElementById('mode-selection').classList.remove('hidden');
+            document.getElementById('diff-selection').classList.add('hidden');
             gameState = 'GAME_OVER';
             inputLocked = true;
-        }
-
-        function setDifficulty(diff) {
-            settings.difficulty = diff;
-            document.querySelectorAll('.diff-btn').forEach(btn => {
-                btn.className = 'diff-btn px-2 py-2 rounded-lg text-xs font-bold border border-gray-700 bg-slate-800 text-white';
-            });
-            const activeBtn = document.getElementById(`diff-${diff}`);
-            activeBtn.className = 'diff-btn px-2 py-2 rounded-lg text-xs font-bold border border-amber-500 bg-amber-500/20 text-amber-400';
         }
 
         let flightTimer = 0;
@@ -1607,6 +1653,24 @@
                 camera.position.lerp(targetCamPos, 0.08);
                 currentCamLookAt.lerp(targetLookAt, 0.08);
                 camera.lookAt(currentCamLookAt);
+                
+            } else if (gameState === 'CHOOSING_CUP') {
+                // Fix 1: Elevated targeting camera for specific second-cup double-bounce selection state
+                let targetCamPos = new THREE.Vector3();
+                let targetLookAt = new THREE.Vector3();
+
+                if (turnOwner === 'PLAYER') {
+                    targetCamPos.set(0, 12, 5); 
+                    targetLookAt.set(0, 0, -10.8);
+                } else {
+                    targetCamPos.set(0, 12, -5); 
+                    targetLookAt.set(0, 0, 10.8);
+                }
+
+                camera.position.lerp(targetCamPos, 0.08);
+                currentCamLookAt.lerp(targetLookAt, 0.08);
+                camera.lookAt(currentCamLookAt);
+                
             } else {
                 // Return smoothly to Home Camera position
                 let homePos = turnOwner === 'PLAYER' ? PLAYER_CAM_HOME : AI_CAM_HOME;
