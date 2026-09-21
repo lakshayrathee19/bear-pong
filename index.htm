@@ -282,6 +282,7 @@
         let aiReRacks = 2;
         let inputLocked = true;
         let stuckFrames = 0;
+        let lastTime = 0; // Tracks last frame time for dt calculation
 
         let shotStartTime = 0;
         let bounceTime = 0;
@@ -846,7 +847,7 @@
             ballBody.velocity.set(0, 0, 0);
             ballBody.angularVelocity.set(0, 0, 0);
             shotBouncedOnTable = false;
-            updateVisuals();
+            updateVisuals(0.0166);
         }
 
         function initControls() {
@@ -1593,14 +1594,14 @@
         }
 
         let flightTimer = 0;
-        function updatePhysics() {
-            world.step(1 / 60);
-            updateVisuals();
+        function updatePhysics(dt) {
+            world.step(1 / 60, dt, 10);
+            updateVisuals(dt);
 
             // Cup Physical Shake Animations
             cups.forEach(cup => {
                 if(cup.shakeTime > 0) {
-                    cup.shakeTime -= 0.016;
+                    cup.shakeTime -= dt;
                     cup.meshGroup.position.x = cup.x + Math.sin(cup.shakeTime * 45) * 0.08 * cup.shakeTime;
                     if(cup.shakeTime <= 0) cup.meshGroup.position.x = cup.x;
                 }
@@ -1609,9 +1610,9 @@
             // Splash Particle Animations
             for(let i = splashParticles.length - 1; i >= 0; i--) {
                 const p = splashParticles[i];
-                p.mesh.position.addScaledVector(p.vel, 0.016);
-                p.vel.y -= 9.8 * 0.016;
-                p.life -= 0.03;
+                p.mesh.position.addScaledVector(p.vel, dt);
+                p.vel.y -= 9.8 * dt;
+                p.life -= 1.8 * dt; // Convert previous 0.03/frame at 60fps to proper delta scale
                 p.mesh.material.opacity = p.life;
                 if(p.life <= 0) {
                     scene.remove(p.mesh);
@@ -1631,7 +1632,7 @@
 
                 // Advanced Dynamic Anti-Stuck logic: Check for ball stalled out near cup rims continuously
                 if (speed < 0.5 && ballBody.position.y > 1.0 && ballBody.position.y < 1.9) {
-                    stuckFrames++;
+                    stuckFrames += dt * 60; // Convert dt back to roughly equivalent frame count for threshold check
                     if (stuckFrames > 25) {
                         ballBody.velocity.x += (Math.random() - 0.5) * 3;
                         ballBody.velocity.z += (Math.random() - 0.5) * 3;
@@ -1669,9 +1670,13 @@
         }
 
 
-        function updateVisuals() {
+        function updateVisuals(dt) {
             ballMesh.position.copy(ballBody.position);
             ballMesh.quaternion.copy(ballBody.quaternion);
+
+            // Framerate-independent lerping calculation maintaining original feel mapping to a 60fps equivalent
+            const lerpFactor08 = 1 - Math.pow(0.92, dt * 60);
+            const lerpFactor06 = 1 - Math.pow(0.94, dt * 60);
 
             // Dynamic Smooth Lerping Camera Controller
             if(gameState === 'IN_FLIGHT' || gameState === 'IMPACT_HOLD') {
@@ -1702,8 +1707,8 @@
                     );
                 }
 
-                camera.position.lerp(targetCamPos, 0.08);
-                currentCamLookAt.lerp(targetLookAt, 0.08);
+                camera.position.lerp(targetCamPos, lerpFactor08);
+                currentCamLookAt.lerp(targetLookAt, lerpFactor08);
                 camera.lookAt(currentCamLookAt);
                 
             } else if (gameState === 'CHOOSING_CUP') {
@@ -1718,8 +1723,8 @@
                     targetLookAt.set(0, 0, 10.8);
                 }
 
-                camera.position.lerp(targetCamPos, 0.08);
-                currentCamLookAt.lerp(targetLookAt, 0.08);
+                camera.position.lerp(targetCamPos, lerpFactor08);
+                currentCamLookAt.lerp(targetLookAt, lerpFactor08);
                 camera.lookAt(currentCamLookAt);
                 
             } else {
@@ -1727,15 +1732,23 @@
                 let homePos = turnOwner === 'PLAYER' ? PLAYER_CAM_HOME : AI_CAM_HOME;
                 let homeLook = turnOwner === 'PLAYER' ? PLAYER_CAM_LOOK : AI_CAM_LOOK;
 
-                camera.position.lerp(homePos, 0.06);
-                currentCamLookAt.lerp(homeLook, 0.06);
+                camera.position.lerp(homePos, lerpFactor06);
+                currentCamLookAt.lerp(homeLook, lerpFactor06);
                 camera.lookAt(currentCamLookAt);
             }
         }
 
-        function animate() {
+        function animate(time) {
             requestAnimationFrame(animate);
-            updatePhysics();
+            if (!time) time = performance.now();
+            if (!lastTime) lastTime = time;
+            
+            let dt = (time - lastTime) / 1000;
+            // Cap delta time to prevent massive jumps/bugs when tab is inactive
+            if (dt > 0.1) dt = 0.1;
+            lastTime = time;
+
+            updatePhysics(dt);
             renderer.render(scene, camera);
         }
 
